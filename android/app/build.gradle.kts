@@ -19,7 +19,8 @@ android {
         applicationId = "ru.sru.sru"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // 26: Process.isAlive / waitFor(timeout) в SruVpnService.
+        minSdk = maxOf(26, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
@@ -27,6 +28,19 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Ядро собирается только под arm64 (см. android/core/build.sh).
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+    }
+
+    // libsrucore.so — исполняемый файл ядра: его нужно распаковать
+    // в nativeLibraryDir, чтобы система разрешила его запуск.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 
     buildTypes {
@@ -46,4 +60,17 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+// Ядро Xray (Go) и geo-базы собираются перед сборкой APK, если изменились исходники.
+val buildCore by tasks.registering(Exec::class) {
+    val core = rootProject.file("core")
+    inputs.files(fileTree(core) { include("*.go", "go.mod", "go.sum", "build.sh") })
+    outputs.file("src/main/jniLibs/arm64-v8a/libsrucore.so")
+    outputs.files("src/main/assets/geo/geoip.dat", "src/main/assets/geo/geosite.dat")
+    commandLine("bash", core.resolve("build.sh").path)
+}
+
+tasks.named("preBuild") {
+    dependsOn(buildCore)
 }

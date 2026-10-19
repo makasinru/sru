@@ -56,10 +56,27 @@ XUI_TEST_URL=http://127.0.0.1:<порт>/<путь> XUI_TEST_TOKEN=<apiToken> XR
   flutter test test/integration/xui_live_test.dart
 ```
 
+## Android
+
+Нативная часть — `android/app/src/main/kotlin/ru/sru/sru/`:
+
+* `vpn/SruVpnService.kt` — `VpnService`: поднимает TUN (IPv4 + IPv6, DNS внутри туннеля), исключает само приложение из VPN (`addDisallowedApplication`), запускает ядро и передаёт ему TUN-дескриптор через unix-сокет (SCM_RIGHTS). Показывает уведомление с кнопкой «Отключить» и реагирует на отзыв VPN системой и на падение ядра.
+* `MainActivity.kt` — канал `ru.sru/vpn` для Flutter: запрос разрешения на VPN, `start`/`stop`/`coreVersion` и поток статусов.
+* `vpn/CoreAssets.kt` — копирует geoip/geosite из APK для правил «кроме РФ» и блокировки рекламы.
+
+Ядро — `android/core/`: Xray-core v26.10.10 с небольшой обёрткой на Go. Собирается без Android NDK (чистый Go, `CGO_ENABLED=0`) и попадает в APK как `libsrucore.so`. Gradle сам вызывает `android/core/build.sh` перед сборкой, нужен только Go 1.27+. Поддерживается только **arm64-v8a**: для armv7/x86 Go требует cgo и NDK.
+
+```bash
+flutter build apk --release --target-platform android-arm64
+```
+
+Тесты ядра: `cd android/core && go test -ldflags=-checklinkname=0 ./...`. Там же лежит e2e-тест (`e2e_test.go`), который на Linux повторяет путь пакетов Android: TUN → дескриптор через сокет → Xray → сервер → сайт.
+
 На десктопе приложение запускает бинарник `xray`, который лежит рядом с исполняемым файлом или находится в `PATH`, в режиме локального прокси: SOCKS `127.0.0.1:10808`, HTTP `127.0.0.1:10809`.
 
 ## Что ещё не сделано
 
-* **Нативный VPN для Android/iOS.** Dart-часть и контракт канала `ru.sru/vpn` готовы (см. `lib/core/vpn/vpn_engine.dart`). Осталось собрать [libXray](https://github.com/XTLS/libXray) через gomobile и написать `VpnService` (Kotlin) и `NetworkExtension` (Swift) — так же устроен Happ.
+* **iOS**: нужен `NetworkExtension` (Packet Tunnel) с Xray, собранным через gomobile.
+* Android: armv7, Quick Settings плитка, запрос разрешения на уведомления (Android 13+), выбор приложений для обхода VPN.
 * AmneziaWG: 3x-ui уже поддерживает inbound, но клиенту нужен отдельный движок amneziawg-go.
 * Сканирование QR, диплинки, системный прокси и TUN на десктопе, управление пользователями и трафиком сервера из приложения.

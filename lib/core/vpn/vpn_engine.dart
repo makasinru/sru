@@ -68,7 +68,9 @@ class MethodChannelVpnEngine extends _BaseEngine {
   Future<void> start(String xrayConfigJson, {required String sessionName}) async {
     emit(VpnStatus.connecting);
     try {
+      // Нативная сторона отвечает, только когда ядро подключилось или упало.
       await _method.invokeMethod('start', {'config': xrayConfigJson, 'name': sessionName});
+      emit(VpnStatus.connected);
     } on PlatformException catch (e) {
       emit(VpnStatus.error, e.message);
     } on MissingPluginException {
