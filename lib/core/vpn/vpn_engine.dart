@@ -32,6 +32,7 @@ abstract class VpnEngine {
     required String sessionName,
     SplitMode appSplit = SplitMode.off,
     List<String> apps = const [],
+    Map<String, Object>? tun,
   });
   Future<void> stop();
 
@@ -95,6 +96,7 @@ class MethodChannelVpnEngine extends _BaseEngine {
     required String sessionName,
     SplitMode appSplit = SplitMode.off,
     List<String> apps = const [],
+    Map<String, Object>? tun,
   }) async {
     emit(VpnStatus.connecting);
     try {
@@ -104,6 +106,8 @@ class MethodChannelVpnEngine extends _BaseEngine {
         'name': sessionName,
         'appMode': appSplit.name,
         'apps': apps,
+        // AmneziaWG: адреса, DNS, MTU и маршруты интерфейса из .conf.
+        'tun': ?tun,
       });
       emit(VpnStatus.connected);
     } on PlatformException catch (e) {
@@ -183,6 +187,7 @@ class DesktopXrayEngine extends _BaseEngine {
     required String sessionName,
     SplitMode appSplit = SplitMode.off, // на десктопе не поддерживается
     List<String> apps = const [],
+    Map<String, Object>? tun, // на Windows адреса AmneziaWG настраивает ядро
   }) async {
     emit(VpnStatus.connecting);
     final dir = await Directory.systemTemp.createTemp('sru');
@@ -230,6 +235,7 @@ class DesktopXrayEngine extends _BaseEngine {
   }
 
   static int? _httpPort(String configJson) {
+    if (!configJson.trimLeft().startsWith('{')) return null; // .conf AmneziaWG
     final inbounds = (jsonDecode(configJson) as Map<String, dynamic>)['inbounds'] as List? ?? [];
     for (final i in inbounds.cast<Map<String, dynamic>>()) {
       if (i['protocol'] == 'http') return i['port'] as int?;

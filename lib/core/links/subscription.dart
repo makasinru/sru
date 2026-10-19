@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/proxy_profile.dart';
+import 'amnezia_wg.dart';
 import 'link_parser.dart';
 
 /// Данные из заголовков подписки (стандарт, который используют 3x-ui,
@@ -79,7 +80,7 @@ class SubscriptionParser {
   static List<ProxyProfile> parseBody(String body) {
     final trimmed = body.trim();
     if (trimmed.isEmpty) return [];
-    if (LinkParser.looksLikeLink(trimmed.split('\n').first.trim())) {
+    if (AmneziaWg.isConf(trimmed) || LinkParser.looksLikeLink(trimmed.split('\n').first.trim())) {
       return LinkParser.parseMany(trimmed);
     }
     try {

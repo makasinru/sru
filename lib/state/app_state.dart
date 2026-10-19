@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import '../core/links/amnezia_wg.dart';
 import '../core/links/link_parser.dart';
 import '../core/links/subscription.dart';
 import '../core/models/proxy_profile.dart';
@@ -367,14 +368,26 @@ class AppState extends ChangeNotifier {
   Future<bool> _startProfile(ServerEntry s, ProxyProfile p) async {
     activeProfile = p;
     notifyListeners();
+    final awg = p.protocol == ProxyProtocol.amneziawg;
+    if (awg && Platform.isWindows && !WindowsAdmin.isAdmin) {
+      autoStatus = 'AmneziaWG на Windows работает только с правами администратора (как режим TUN)';
+      notifyListeners();
+      return false;
+    }
     await engine.start(
-      XrayConfigBuilder.buildJson(p, xrayOptions),
+      // AmneziaWG — сам .conf: ядро поднимает amneziawg-go вместо Xray.
+      awg ? p.params['conf']! : XrayConfigBuilder.buildJson(p, xrayOptions),
       sessionName: s.name,
       appSplit: advanced ? appSplit : SplitMode.off,
       apps: splitApps,
+      tun: awg ? AmneziaWg.tunParams(p.params['conf']!) : null,
     );
     return engine.current == VpnStatus.connected;
   }
+
+  /// У AmneziaWG нет локального прокси для проверки сайтов, зато ядро сообщает
+  /// о подключении только после рукопожатия с сервером — это и есть проверка.
+  bool get _activeIsAwg => activeProfile?.protocol == ProxyProtocol.amneziawg;
 
   Future<void> toggle() async {
     if (status == VpnStatus.connected || status == VpnStatus.connecting) {
@@ -416,6 +429,12 @@ class AppState extends ChangeNotifier {
         notifyListeners();
       }
       if (!await _startProfile(s, p)) continue;
+      if (p.protocol == ProxyProtocol.amneziawg) {
+        checks = [];
+        best = p;
+        bestMs = fastEnoughMs;
+        break; // рукопожатие уже проверено ядром
+      }
       final quick = await _checker.checkAll(
         sites: ConnectivityChecker.targets.take(2).toList(),
         timeout: const Duration(seconds: 6),
@@ -451,7 +470,7 @@ class AppState extends ChangeNotifier {
 
   /// Полная проверка для экрана: Telegram, YouTube, Microsoft.
   Future<void> runChecks() async {
-    if (status != VpnStatus.connected || checking) return;
+    if (status != VpnStatus.connected || checking || _activeIsAwg) return;
     checking = true;
     notifyListeners();
     checks = await _checker.checkAll();
@@ -472,7 +491,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  static bool isKeyText(String s) => LinkParser.looksLikeLink(s.trim()) || s.trim().startsWith('http');
+  static bool isKeyText(String s) =>
+      LinkParser.looksLikeLink(s.trim()) || s.trim().startsWith('http') || AmneziaWg.isConf(s);
 
   @override
   void dispose() {

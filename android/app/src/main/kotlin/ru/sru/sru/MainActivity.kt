@@ -83,6 +83,9 @@ class MainActivity : FlutterActivity() {
                         SruVpnService.EXTRA_APPS,
                         ArrayList(call.argument<List<String>>("apps") ?: emptyList()),
                     )
+                call.argument<Map<String, Any>>("tun")?.let {
+                    intent.putExtra(SruVpnService.EXTRA_TUN, org.json.JSONObject(it).toString())
+                }
                 val consent = VpnService.prepare(this)
                 if (consent == null) {
                     launch(intent, result)

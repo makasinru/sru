@@ -79,6 +79,9 @@ func runDesktop(configPath, assetDir string, stdin io.Reader, stdout io.Writer) 
 	if err != nil {
 		return err
 	}
+	if isAwgConf(data) {
+		return runDesktopAwg(data, stdin, stdout)
+	}
 	inst, err := core.StartInstance("json", data)
 	if err != nil {
 		return fmt.Errorf("xray: %w", err)

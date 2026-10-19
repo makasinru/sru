@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sru/core/links/link_parser.dart';
+import 'package:sru/core/models/proxy_profile.dart';
 import 'package:sru/core/vpn/connectivity_check.dart';
 import 'package:sru/core/vpn/vpn_engine.dart';
 import 'package:sru/core/xray/split_tunnel.dart';
@@ -16,6 +17,7 @@ class FakeEngine implements VpnEngine {
   final started = <String>[];
   String? lastConfig;
   SplitMode? lastAppSplit;
+  Map<String, Object>? lastTun;
 
   @override
   Stream<VpnStatus> get status => _c.stream;
@@ -29,10 +31,14 @@ class FakeEngine implements VpnEngine {
     required String sessionName,
     SplitMode appSplit = SplitMode.off,
     List<String> apps = const [],
+    Map<String, Object>? tun,
   }) async {
+    lastTun = tun;
     lastConfig = cfg;
     lastAppSplit = appSplit;
-    started.add(RegExp(r'"port": (\d+)').allMatches(cfg).map((m) => m.group(1)).last!);
+    started.add(
+      cfg.startsWith('[Interface]') ? 'awg' : RegExp(r'"port": (\d+)').allMatches(cfg).map((m) => m.group(1)).last!,
+    );
     _s = VpnStatus.connected;
     _c.add(_s);
   }
@@ -113,6 +119,21 @@ void main() {
     await state.toggle();
     expect(engine.current, VpnStatus.disconnected);
     expect(state.autoStatus, contains('Ни один протокол'));
+  });
+
+  test('AmneziaWG: ядру уходит .conf и параметры интерфейса, сайты не проверяются', () async {
+    final (state, engine, s) = await setup({'1001': null, '1002': null, '1003': null});
+    s.profiles.add(
+      LinkParser.parseMany(
+        '[Interface]\nPrivateKey = x\nAddress = 10.8.1.2/32\nDNS = 1.1.1.1\nMTU = 1380\n[Peer]\nPublicKey = y\nAllowedIPs = 0.0.0.0/0\nEndpoint = 1.2.3.4:47521',
+      ).single,
+    );
+    await state.toggle();
+    expect(engine.started.last, 'awg');
+    expect(state.activeProfile!.protocol, ProxyProtocol.amneziawg);
+    expect(engine.lastTun!['mtu'], 1380);
+    expect(engine.lastTun!['addresses'], ['10.8.1.2/32']);
+    expect(state.checks, isEmpty);
   });
 
   test('раздельное туннелирование работает только в продвинутом режиме', () async {

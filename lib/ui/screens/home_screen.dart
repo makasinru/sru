@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/models/proxy_profile.dart';
 import '../../core/vpn/connectivity_check.dart';
 import '../../core/vpn/vpn_engine.dart';
 import '../../state/app_state.dart';
@@ -150,6 +151,14 @@ class _ChecksRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (state.activeProfile?.protocol == ProxyProtocol.amneziawg) {
+      return const Chip(
+        avatar: Icon(Icons.check_circle, size: 18, color: SruColors.success),
+        label: Text('AmneziaWG · рукопожатие с сервером есть'),
+        backgroundColor: SruColors.bgSurface,
+        side: BorderSide(color: SruColors.border),
+      );
+    }
     final results = {for (final r in state.checks) r.target.name: r};
     return Column(
       children: [

@@ -7,6 +7,9 @@ enum ProxyProtocol {
   shadowsocks('Shadowsocks'),
   hysteria2('Hysteria2'),
   wireguard('WireGuard'),
+
+  /// Не через Xray: отдельный движок amneziawg-go в ядре (Android, Windows).
+  amneziawg('AmneziaWG'),
   socks('SOCKS');
 
   const ProxyProtocol(this.title);
@@ -49,7 +52,7 @@ class ProxyProfile {
   /// Короткое описание для списка серверов в продвинутом режиме.
   String get transportLabel {
     if (protocol == ProxyProtocol.hysteria2) return 'QUIC';
-    if (protocol == ProxyProtocol.wireguard) return 'UDP';
+    if (protocol == ProxyProtocol.wireguard || protocol == ProxyProtocol.amneziawg) return 'UDP';
     final sec = security == 'none' ? '' : ' + ${security.toUpperCase()}';
     return '${network.toUpperCase()}$sec';
   }

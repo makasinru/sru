@@ -143,7 +143,13 @@ class XuiInstaller {
       for (final proto in protocols) {
         final port = await _freePort(ports[proto] ?? proto.defaultPort, udp: proto.isUdp);
         progress(InstallStep.protocols, 'Включаем ${proto.title} (порт $port)');
-        await api.addInbound(ProtocolPresets.inbound(proto, ctx, port: port));
+        final created = await api.addInbound(ProtocolPresets.inbound(proto, ctx, port: port));
+        if (proto.clientViaApi) {
+          await api.addClient(
+            {'email': '${ctx.email}-${proto.name}', 'subId': subId, 'enable': true},
+            [created['id'] as int],
+          );
+        }
         await _openFirewall(port, udp: proto.isUdp);
       }
 

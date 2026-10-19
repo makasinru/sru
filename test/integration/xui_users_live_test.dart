@@ -8,6 +8,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sru/core/links/link_parser.dart';
+import 'package:sru/core/models/proxy_profile.dart';
 import 'package:sru/core/server/server_users.dart';
 import 'package:sru/core/server/xui_api.dart';
 
@@ -27,7 +28,10 @@ void main() {
       expect(user.limitBytes, 50 << 30);
       expect(user.expiry!.difference(DateTime.now()).inDays, inInclusiveRange(29, 30));
       final profiles = LinkParser.parseMany(links.join('\n'));
-      expect(profiles, isNotEmpty);
+      expect(profiles.length, links.length, reason: 'каждый ключ панели должен разбираться');
+      if (inbounds.any((i) => i['protocol'] == 'amneziawg')) {
+        expect(profiles.map((p) => p.protocol), contains(ProxyProtocol.amneziawg));
+      }
       // flow Vision панель оставила только там, где он возможен (TCP + Reality).
       for (final p in profiles) {
         if (p.params['flow'] == 'xtls-rprx-vision') expect(p.network, anyOf('tcp', 'raw'));

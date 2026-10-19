@@ -194,6 +194,8 @@ class XrayConfigBuilder {
   static Map<String, dynamic> outbound(ProxyProfile p) {
     final q = p.params;
     switch (p.protocol) {
+      case ProxyProtocol.amneziawg:
+        throw UnsupportedError('AmneziaWG работает в ядре без Xray (см. core/awg.go)');
       case ProxyProtocol.vless:
         return {
           'tag': 'proxy',

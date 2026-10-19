@@ -26,7 +26,12 @@ enum ServerProtocol {
     'Простой и лёгкий протокол без маскировки. Подходит для обхода геоблоков, но не DPI.',
     8388,
   ),
-  vmessWs('VMess + WebSocket', 'Для работы через CDN (Cloudflare) или старых клиентов. Без CDN менее устойчив.', 8080);
+  vmessWs('VMess + WebSocket', 'Для работы через CDN (Cloudflare) или старых клиентов. Без CDN менее устойчив.', 8080),
+  amneziawg(
+    'AmneziaWG',
+    'WireGuard с маскировкой от DPI, как в AmneziaVPN. Быстрый, работает поверх UDP. На Windows нужны права администратора.',
+    47521,
+  );
 
   const ServerProtocol(this.title, this.description, this.defaultPort);
   final String title;
@@ -34,13 +39,21 @@ enum ServerProtocol {
   final int defaultPort;
 
   /// Протоколы на UDP не конфликтуют по порту с TCP.
-  bool get isUdp => this == ServerProtocol.hysteria2;
+  bool get isUdp => this == ServerProtocol.hysteria2 || this == ServerProtocol.amneziawg;
+
+  /// Клиент добавляется отдельно, через clients/add: панель сама выдаёт ключи
+  /// и адрес в туннеле (в настройках inbound ей нужен готовый allowedIPs).
+  bool get clientViaApi => this == ServerProtocol.amneziawg;
 }
 
-/// Что ставит простой режим («Автоматически»): основной протокол,
-/// запасной на другом порту и быстрый UDP-протокол — клиент сам выберет
-/// работающий.
-const casualProtocols = [ServerProtocol.vlessRealityVision, ServerProtocol.vlessRealityXhttp, ServerProtocol.hysteria2];
+/// Что ставит простой режим («Автоматически»): основной протокол, запасной на
+/// другом порту, быстрый UDP-протокол и AmneziaWG — клиент сам выберет работающий.
+const casualProtocols = [
+  ServerProtocol.vlessRealityVision,
+  ServerProtocol.vlessRealityXhttp,
+  ServerProtocol.hysteria2,
+  ServerProtocol.amneziawg,
+];
 
 class PresetContext {
   PresetContext({
@@ -212,6 +225,16 @@ class ProtocolPresets {
             ],
           },
           'streamSettings': {'network': 'tcp', 'security': 'none'},
+        };
+      case ServerProtocol.amneziawg:
+        // Пустые clients: ключи сервера и параметры обфускации (AWG 3.1)
+        // панель генерирует сама.
+        return {
+          ...base,
+          'protocol': 'amneziawg',
+          'settings': {'clients': []},
+          'streamSettings': {},
+          'sniffing': {'enabled': false},
         };
       case ServerProtocol.vmessWs:
         return {

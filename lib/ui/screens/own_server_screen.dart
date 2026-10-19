@@ -103,7 +103,7 @@ class _OwnServerScreenState extends State<OwnServerScreen> {
                       value: true,
                       title: Text('Автоматически'),
                       subtitle: Text(
-                        'VLESS Reality + запасной XHTTP + Hysteria2. Приложение само выберет то, что работает в вашей сети.',
+                        'VLESS Reality, запасной XHTTP, Hysteria2 и AmneziaWG. Приложение само выберет то, что работает в вашей сети.',
                       ),
                     ),
                     if (advanced)

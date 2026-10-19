@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build linux
 
 package main
 
@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/amnezia-vpn/amneziawg-go/v3/conn"
+	"github.com/amnezia-vpn/amneziawg-go/v3/tun"
 	"github.com/xtls/xray-core/core"
 	"golang.org/x/sys/unix"
 )
@@ -71,7 +73,7 @@ func serve(socketPath, configPath, assetDir string, dns []string) error {
 		reply(conn, "error:"+err.Error())
 		return err
 	}
-	inst, err := startXray(configPath, fd)
+	inst, err := startEngine(configPath, fd)
 	if err != nil {
 		reply(conn, "error:"+err.Error())
 		return err
@@ -126,6 +128,45 @@ func receiveStart(conn *net.UnixConn) (int, error) {
 		}
 	}
 	return -1, errors.New("не получен TUN-дескриптор")
+}
+
+// startEngine запускает Xray (JSON-конфиг) или AmneziaWG (.conf) на TUN.
+func startEngine(configPath string, tunFd int) (interface{ Close() error }, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+	if isAwgConf(data) {
+		return startAwgOnFd(data, tunFd)
+	}
+	return startXray(configPath, tunFd)
+}
+
+type awgInstance struct{ close func() }
+
+func (a awgInstance) Close() error {
+	a.close()
+	return nil
+}
+
+func startAwgOnFd(conf []byte, tunFd int) (interface{ Close() error }, error) {
+	cfg, err := parseAwgConf(string(conf), defaultResolve)
+	if err != nil {
+		return nil, err
+	}
+	tunDev, _, err := tun.CreateUnmonitoredTUNFromFD(tunFd)
+	if err != nil {
+		return nil, fmt.Errorf("TUN: %w", err)
+	}
+	dev, err := startAwgDevice(tunDev, conn.NewDefaultBind(), cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := waitHandshake(dev, 12*time.Second); err != nil {
+		dev.Close()
+		return nil, err
+	}
+	return awgInstance{close: dev.Close}, nil
 }
 
 func startXray(configPath string, tunFd int) (*core.Instance, error) {

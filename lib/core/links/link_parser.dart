@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/proxy_profile.dart';
+import 'amnezia_wg.dart';
 
 class LinkParseException implements Exception {
   LinkParseException(this.message);
@@ -23,6 +24,7 @@ class LinkParser {
     'wg',
     'socks',
     'socks5',
+    'vpn',
   ];
 
   static bool looksLikeLink(String s) {
@@ -33,6 +35,8 @@ class LinkParser {
   /// Разбирает текст с несколькими ссылками (по одной на строку), пропуская
   /// пустые строки, комментарии и неподдерживаемые схемы.
   static List<ProxyProfile> parseMany(String text) {
+    // Целиком .conf AmneziaWG/WireGuard.
+    if (AmneziaWg.isConf(text)) return [AmneziaWg.profile(text)];
     final result = <ProxyProfile>[];
     for (final line in const LineSplitter().convert(text)) {
       final s = line.trim();
@@ -69,6 +73,10 @@ class LinkParser {
       case 'socks':
       case 'socks5':
         return _parseSocks(s);
+      case 'vpn':
+        final conf = AmneziaWg.confFromVpnLink(s);
+        if (conf == null) throw LinkParseException('В ключе vpn:// нет конфигурации AmneziaWG');
+        return AmneziaWg.profile(conf, raw: s);
     }
     throw LinkParseException('Неподдерживаемая схема: $scheme');
   }

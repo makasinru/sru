@@ -83,6 +83,11 @@ MockClient fakePanel(List<Map<String, dynamic>> added) => MockClient((req) async
       final body = jsonDecode(req.body) as Map<String, dynamic>;
       added.add(body);
       obj = {'id': added.length};
+    case 'clients/add':
+      // AmneziaWG: клиент добавляется отдельно, панель выдаёт ему ключи.
+      final body = jsonDecode(req.body) as Map<String, dynamic>;
+      final ib = added[((body['inboundIds'] as List).single as int) - 1];
+      (ib['settings']['clients'] as List).add(body['client']);
     default:
       if (path.startsWith('clients/subLinks/')) {
         obj = [
@@ -90,7 +95,9 @@ MockClient fakePanel(List<Map<String, dynamic>> added) => MockClient((req) async
             if (ib['protocol'] == 'vless')
               'vless://${ib['settings']['clients'][0]['id']}@1.2.3.4:${ib['port']}?security=reality&pbk=PUB#v'
             else if (ib['protocol'] == 'hysteria')
-              'hysteria2://${ib['settings']['clients'][0]['auth']}@1.2.3.4:${ib['port']}?sni=x&pinSHA256=${'aa' * 32}#h',
+              'hysteria2://${ib['settings']['clients'][0]['auth']}@1.2.3.4:${ib['port']}?sni=x&pinSHA256=${'aa' * 32}#h'
+            else if (ib['protocol'] == 'amneziawg' && (ib['settings']['clients'] as List).isNotEmpty)
+              'vpn://${base64Url.encode(utf8.encode('[Interface]\nPrivateKey = ${'A' * 43}=\nAddress = 10.8.1.2/32\nJc = 4\n\n# awg\n[Peer]\nPublicKey = ${'B' * 43}=\nAllowedIPs = 0.0.0.0/0\nEndpoint = 1.2.3.4:${ib['port']}')).replaceAll('=', '')}',
         ];
       } else {
         return http.Response('{"success":false,"msg":"unknown $path"}', 404);
@@ -117,7 +124,7 @@ void main() {
     expect(res.panel.password, 'p w');
     expect(res.panel.webBasePath, 'secretpath');
 
-    expect(added.map((i) => i['protocol']), ['vless', 'vless', 'hysteria']);
+    expect(added.map((i) => i['protocol']), ['vless', 'vless', 'hysteria', 'amneziawg']);
     expect(added[0]['port'], 443);
     expect(added[1]['port'], isNot(8443), reason: 'порт 8443 занят — должен быть выбран другой');
     expect(added[2]['port'], 443, reason: 'UDP 443 свободен, хотя TCP 443 уже занят VLESS');
@@ -125,7 +132,16 @@ void main() {
     expect(added[0]['streamSettings']['realitySettings']['privateKey'], 'PRIV');
     expect(added[2]['streamSettings']['tlsSettings']['settings']['pinnedPeerCertSha256'], ['aa' * 32]);
 
-    expect(res.profiles.map((p) => p.protocol), [ProxyProtocol.vless, ProxyProtocol.vless, ProxyProtocol.hysteria2]);
+    expect(res.profiles.map((p) => p.protocol), [
+      ProxyProtocol.vless,
+      ProxyProtocol.vless,
+      ProxyProtocol.hysteria2,
+      ProxyProtocol.amneziawg,
+    ]);
+    // AmneziaWG: пустой inbound (ключи и обфускацию генерирует панель), клиент — через clients/add.
+    expect(added[3]['settings']['clients'].single['subId'], res.subId);
+    expect(res.profiles[3].port, 47521);
+    expect(res.profiles[3].params['conf'], contains('Jc = 4'));
     expect(steps, containsAll(InstallStep.values.where((s) => s != InstallStep.connect)));
   });
 

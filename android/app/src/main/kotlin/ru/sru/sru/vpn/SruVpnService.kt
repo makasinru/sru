@@ -37,6 +37,7 @@ class SruVpnService : VpnService() {
         const val EXTRA_NAME = "name"
         const val EXTRA_APP_MODE = "appMode" // off | onlyListed | exceptListed
         const val EXTRA_APPS = "apps"
+        const val EXTRA_TUN = "tun" // JSON TunSpec (AmneziaWG); нет — настройки для Xray
 
         private const val TAG = "SruVpn"
         private const val CHANNEL_ID = "vpn"
@@ -72,9 +73,10 @@ class SruVpnService : VpnService() {
                     intent.getStringExtra(EXTRA_APP_MODE) ?: "off",
                     intent.getStringArrayListExtra(EXTRA_APPS).orEmpty(),
                 )
+                val tunSpec = intent.getStringExtra(EXTRA_TUN)?.let(TunSpec::fromJson)
                 goForeground(name)
                 VpnStatusBus.post(VpnStatusBus.CONNECTING)
-                worker.execute { start(config, name, split) }
+                worker.execute { start(config, name, split, tunSpec) }
             }
             ACTION_STOP -> worker.execute { stop(null) }
         }
@@ -92,12 +94,12 @@ class SruVpnService : VpnService() {
         super.onDestroy()
     }
 
-    private fun start(config: String, name: String, split: AppSplit) {
+    private fun start(config: String, name: String, split: AppSplit, tunSpec: TunSpec?) {
         stopInternal()
         stopping = false
         try {
             val assetDir = CoreAssets.ensure(this)
-            val tunFd = establishTun(name, split)
+            val tunFd = establishTun(name, split, tunSpec)
             tun = tunFd
             val dir = noBackupFilesDir
             val cfg = File(dir, "config.json").apply { writeText(config) }
@@ -129,7 +131,7 @@ class SruVpnService : VpnService() {
             }.apply { isDaemon = true }.start()
 
             updateNotification(name)
-            LastSession(config, name, split.mode, split.packages).save(this)
+            LastSession(config, name, split.mode, split.packages, tunSpec?.json).save(this)
             VpnStatusBus.post(VpnStatusBus.CONNECTED)
         } catch (e: Exception) {
             Log.e(TAG, "start failed", e)
@@ -137,16 +139,21 @@ class SruVpnService : VpnService() {
         }
     }
 
-    private fun establishTun(name: String, split: AppSplit): ParcelFileDescriptor {
+    private fun establishTun(name: String, split: AppSplit, tunSpec: TunSpec?): ParcelFileDescriptor {
         val builder = Builder()
             .setSession(name)
-            .setMtu(MTU)
-            .addAddress(TUN_ADDRESS, 30)
-            .addRoute("0.0.0.0", 0)
-            .addAddress(TUN_ADDRESS6, 126)
-            .addRoute("::", 0)
-            .addDnsServer(TUN_DNS)
             .setConfigureIntent(openAppIntent())
+        if (tunSpec == null) {
+            // Xray: свой адрес, весь трафик и DNS внутри туннеля (их обрабатывает ядро).
+            builder.setMtu(MTU)
+                .addAddress(TUN_ADDRESS, 30)
+                .addRoute("0.0.0.0", 0)
+                .addAddress(TUN_ADDRESS6, 126)
+                .addRoute("::", 0)
+                .addDnsServer(TUN_DNS)
+        } else {
+            tunSpec.apply(builder)
+        }
         split.apply(builder, packageName)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setMetered(false)
         return builder.establish() ?: throw IOException("Нет разрешения на VPN")
@@ -255,6 +262,46 @@ class SruVpnService : VpnService() {
     private fun updateNotification(name: String) {
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, notification(name, "Подключено"))
+    }
+}
+
+/**
+ * Интерфейс для AmneziaWG — из .conf: адреса, DNS, маршруты (AllowedIPs), MTU.
+ * Приходит из Flutter (lib/core/links/amnezia_wg.dart, tunParams) как JSON.
+ */
+class TunSpec(val json: String) {
+    private val obj = org.json.JSONObject(json)
+
+    private fun list(key: String): List<String> {
+        val a = obj.optJSONArray(key) ?: return emptyList()
+        return List(a.length()) { a.getString(it) }
+    }
+
+    fun apply(builder: VpnService.Builder) {
+        builder.setMtu(obj.optInt("mtu", 1420))
+        for (a in list("addresses")) {
+            val (ip, prefix) = split(a)
+            builder.addAddress(ip, prefix)
+        }
+        for (r in list("routes")) {
+            val (ip, prefix) = split(r)
+            try {
+                builder.addRoute(ip, prefix)
+            } catch (_: IllegalArgumentException) {
+                // например, IPv6-маршрут на устройстве без IPv6 — пропускаем
+            }
+        }
+        for (d in list("dns")) builder.addDnsServer(d)
+    }
+
+    private fun split(cidr: String): Pair<String, Int> {
+        val i = cidr.indexOf('/')
+        if (i < 0) return cidr to (if (cidr.contains(':')) 128 else 32)
+        return cidr.substring(0, i) to cidr.substring(i + 1).toInt()
+    }
+
+    companion object {
+        fun fromJson(json: String) = TunSpec(json)
     }
 }
 
