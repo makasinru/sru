@@ -145,14 +145,26 @@ class _StatusText extends StatelessWidget {
   }
 }
 
-/// Итоги автоподбора: какой протокол сколько показал, выбранный отмечен.
+/// Итоги автоподбора: самые быстрые варианты, выбранный отмечен звездой.
+/// Подписка может дать десятки стран и протоколов — показываем не больше [shown].
 class _ProbeList extends StatelessWidget {
   const _ProbeList({required this.state});
   final AppState state;
 
+  static const shown = 6;
+
   @override
   Widget build(BuildContext context) {
     final chosen = state.busy ? null : state.activeProfile;
+    final all = state.probeResults;
+    // Разные серверы (страны) — подписываем названием, один сервер — протоколом.
+    final manyHosts = all.map((r) => r.$1.host).toSet().length > 1;
+    String label(ProxyProfile p) => manyHosts && p.name.isNotEmpty ? p.name : p.displayName;
+
+    final working = all.where((r) => r.$2 != null).toList()..sort((a, b) => a.$2!.compareTo(b.$2!));
+    final failed = all.where((r) => r.$2 == null).toList();
+    final list = [...working, ...failed].take(shown).toList();
+    final hidden = all.length - list.length;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Wrap(
@@ -160,7 +172,7 @@ class _ProbeList extends StatelessWidget {
         spacing: 6,
         runSpacing: 6,
         children: [
-          for (final (p, ms) in state.probeResults)
+          for (final (p, ms) in list)
             Chip(
               visualDensity: VisualDensity.compact,
               avatar: Icon(
@@ -170,9 +182,19 @@ class _ProbeList extends StatelessWidget {
                     ? SruColors.destructive
                     : (identical(p, chosen) ? SruColors.accent : SruColors.success),
               ),
-              label: Text('${p.displayName} · ${ms == null ? 'нет' : '$ms мс'}', style: const TextStyle(fontSize: 12)),
+              label: Text('${label(p)} · ${ms == null ? 'нет' : '$ms мс'}', style: const TextStyle(fontSize: 12)),
               backgroundColor: SruColors.bgSurface,
               side: BorderSide(color: identical(p, chosen) ? SruColors.accent : SruColors.border),
+            ),
+          if (hidden > 0)
+            Chip(
+              visualDensity: VisualDensity.compact,
+              label: Text(
+                'работает ${working.length} из ${all.length}',
+                style: const TextStyle(fontSize: 12, color: SruColors.textTertiary),
+              ),
+              backgroundColor: SruColors.bgSurface,
+              side: const BorderSide(color: SruColors.border),
             ),
         ],
       ),

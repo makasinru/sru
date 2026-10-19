@@ -192,6 +192,8 @@ class DesktopXrayEngine extends _BaseEngine {
     List<String> apps = const [],
     Map<String, Object>? tun, // на Windows адреса AmneziaWG настраивает ядро
   }) async {
+    // Перезапуск с другим конфигом (перебор протоколов): старое ядро держит порты.
+    await _killCore();
     emit(VpnStatus.connecting);
     final dir = await Directory.systemTemp.createTemp('sru');
     final cfg = File('${dir.path}${Platform.pathSeparator}config.json')..writeAsStringSync(xrayConfigJson);
@@ -258,19 +260,22 @@ class DesktopXrayEngine extends _BaseEngine {
   Future<void> stop() async {
     emit(VpnStatus.disconnecting);
     _disableProxy();
+    await _killCore();
+    emit(VpnStatus.disconnected);
+  }
+
+  Future<void> _killCore() async {
     final p = _process;
     _process = null;
-    if (p != null) {
-      await p.stdin.close(); // ядро видит закрытый stdin и выходит
-      await p.exitCode.timeout(
-        const Duration(seconds: 3),
-        onTimeout: () {
-          p.kill();
-          return -1;
-        },
-      );
-    }
-    emit(VpnStatus.disconnected);
+    if (p == null) return;
+    await p.stdin.close(); // ядро видит закрытый stdin и выходит
+    await p.exitCode.timeout(
+      const Duration(seconds: 3),
+      onTimeout: () {
+        p.kill();
+        return -1;
+      },
+    );
   }
 
   @override

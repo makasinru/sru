@@ -89,6 +89,10 @@ class ConnectivityChecker {
       if (resp.statusCode == HttpStatus.proxyAuthenticationRequired) {
         return CheckResult(t, null, 'прокси отклонил пароль');
       }
+      // 502/503/504 отдаёт ядро, когда не достучалось до сервера VPN.
+      if (resp.statusCode >= 502 && resp.statusCode <= 504) {
+        return CheckResult(t, null, 'сервер VPN не отвечает');
+      }
       return CheckResult(t, ms);
     } catch (e) {
       return CheckResult(t, null, e is TimeoutException ? 'нет ответа' : e.toString());

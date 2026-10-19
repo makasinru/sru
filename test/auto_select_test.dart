@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +16,7 @@ class FakeEngine implements VpnEngine {
   final _c = StreamController<VpnStatus>.broadcast();
   VpnStatus _s = VpnStatus.disconnected;
   final started = <String>[];
+  final httpToServer = <int, String>{};
   String? lastConfig;
   SplitMode? lastAppSplit;
   Map<String, Object>? lastTun;
@@ -36,9 +38,26 @@ class FakeEngine implements VpnEngine {
     lastTun = tun;
     lastConfig = cfg;
     lastAppSplit = appSplit;
-    started.add(
-      cfg.startsWith('[Interface]') ? 'awg' : RegExp(r'"port": (\d+)').allMatches(cfg).map((m) => m.group(1)).last!,
-    );
+    httpToServer.clear();
+    if (cfg.startsWith('[Interface]')) {
+      started.add('awg');
+    } else {
+      final j = jsonDecode(cfg) as Map<String, dynamic>;
+      final outs = {
+        for (final o in (j['outbounds'] as List).cast<Map<String, dynamic>>())
+          o['tag']: (o['settings']?['vnext'] as List?)?.first['port'].toString(),
+      };
+      final rules = (j['routing']['rules'] as List).cast<Map<String, dynamic>>();
+      final probe = rules.any((r) => r.containsKey('inboundTag'));
+      for (final i in (j['inbounds'] as List).cast<Map<String, dynamic>>()) {
+        if (i['protocol'] != 'http') continue;
+        final out = probe
+            ? rules.firstWhere((r) => (r['inboundTag'] as List?)?.contains(i['tag']) ?? false)['outboundTag']
+            : 'proxy';
+        httpToServer[i['port'] as int] = outs[out]!;
+      }
+      started.add(probe ? 'probe' : httpToServer.values.single);
+    }
     _s = VpnStatus.connected;
     _c.add(_s);
   }
@@ -57,7 +76,7 @@ class FakeEngine implements VpnEngine {
 
 /// Отвечает задержкой, заданной для порта текущего профиля (null — сайты не открываются).
 class FakeChecker extends ConnectivityChecker {
-  FakeChecker(this.engine, this.msByPort) : super(proxyPort: 0);
+  FakeChecker(this.engine, this.msByPort, int port) : super(proxyPort: port);
   final FakeEngine engine;
   final Map<String, int?> msByPort;
 
@@ -66,7 +85,7 @@ class FakeChecker extends ConnectivityChecker {
     List<CheckTarget> sites = ConnectivityChecker.targets,
     Duration timeout = const Duration(seconds: 8),
   }) async {
-    final ms = msByPort[engine.started.last];
+    final ms = msByPort[engine.httpToServer[proxyPort]];
     return [for (final t in sites) CheckResult(t, ms)];
   }
 
@@ -88,42 +107,48 @@ void main() {
 
   Future<(AppState, FakeEngine, ServerEntry)> setup(Map<String, int?> ms) async {
     final engine = FakeEngine();
-    final state = AppState(engine: engine)..checkerFactory = (_) => FakeChecker(engine, ms);
+    final state = AppState(engine: engine)..checkerFactory = (port) => FakeChecker(engine, ms, port);
     final s = server();
     state.servers = [s];
     state.selectedServerId = s.id;
     return (state, engine, s);
   }
 
-  test('проверяет все протоколы и подключается к самому быстрому', () async {
+  test('проверяет все протоколы разом и подключается к самому быстрому', () async {
     final (state, engine, s) = await setup({'1001': null, '1002': 120, '1003': 50});
     await state.toggle();
-    expect(engine.started, ['1001', '1002', '1003']); // последний и есть лучший — без переподключения
+    expect(engine.started, ['probe', '1003']);
     expect(state.activeProfile, s.profiles[2]);
     expect(s.lastGoodProfile, 2);
     expect(state.probeResults.map((r) => r.$2), [null, 120, 50]);
+    expect(state.checks.first.ms, 50);
   });
 
-  test('после перебора переподключается к лучшему', () async {
-    final (state, engine, s) = await setup({'1001': 900, '1002': 300, '1003': 700});
+  test('подписка на десятки серверов проверяется пачками, а не по одному', () async {
+    final engine = FakeEngine();
+    final ms = {for (var i = 0; i < 70; i++) '${2000 + i}': i == 55 ? 40 : 500};
+    final state = AppState(engine: engine)..checkerFactory = (port) => FakeChecker(engine, ms, port);
+    final s = ServerEntry(
+      id: 'big',
+      name: 'подписка',
+      kind: ServerKind.subscription,
+      profiles: LinkParser.parseMany(
+        [for (var i = 0; i < 70; i++) 'vless://u@h$i:${2000 + i}?security=none#c$i'].join('\n'),
+      ),
+    );
+    state.servers = [s];
+    state.selectedServerId = s.id;
     await state.toggle();
-    expect(engine.started, ['1001', '1002', '1003', '1002']);
-    expect(state.activeProfile, s.profiles[1]);
-    expect(state.checks.first.ms, 300);
-  });
-
-  test('прошлый лучший проверяется первым, но остальные тоже', () async {
-    final (state, engine, s) = await setup({'1001': 100, '1002': 100, '1003': 100});
-    s.lastGoodProfile = 2;
-    await state.toggle();
-    expect(engine.started, ['1003', '1001', '1002', '1003']);
+    expect(engine.started, ['probe', 'probe', 'probe', '2055']);
+    expect(state.probeResults, hasLength(70));
+    expect(state.activeProfile, s.profiles[55]);
   });
 
   test('выбор протокола из продвинутого режима не мешает простому', () async {
     final (state, engine, s) = await setup({'1001': 500, '1002': 100, '1003': 500});
     s.selectedProfile = 0;
     await state.toggle();
-    expect(engine.started.take(3), ['1001', '1002', '1003']);
+    expect(engine.started, ['probe', '1002']);
     expect(state.activeProfile, s.profiles[1]);
     await state.toggle();
     state.mode = UiMode.advanced;

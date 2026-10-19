@@ -28,4 +28,14 @@ class LocalPorts {
       return _free(0);
     }
   }
+
+  /// [n] разных свободных портов (для одновременной проверки многих серверов).
+  static Future<List<int>> pickMany(int n) async {
+    final sockets = [for (var i = 0; i < n; i++) await ServerSocket.bind(InternetAddress.loopbackIPv4, 0)];
+    final ports = [for (final s in sockets) s.port];
+    for (final s in sockets) {
+      await s.close();
+    }
+    return ports;
+  }
 }

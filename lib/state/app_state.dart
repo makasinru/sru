@@ -354,11 +354,13 @@ class AppState extends ChangeNotifier {
   );
 
   /// Для тестов: подменить проверку подключения.
-  ConnectivityChecker Function(XrayOptions o)? checkerFactory;
+  ConnectivityChecker Function(int httpPort)? checkerFactory;
 
-  ConnectivityChecker get _checker =>
-      checkerFactory?.call(xrayOptions) ??
-      ConnectivityChecker(proxyPort: xrayOptions.httpPort, proxyUser: _proxyUser, proxyPassword: _proxyPassword);
+  ConnectivityChecker _checkerOn(int port) =>
+      checkerFactory?.call(port) ??
+      ConnectivityChecker(proxyPort: port, proxyUser: _proxyUser, proxyPassword: _proxyPassword);
+
+  ConnectivityChecker get _checker => _checkerOn(xrayOptions.httpPort);
 
   /// Порядок перебора: выбранный профиль (только в продвинутом режиме)
   /// или все по очереди («Автоматически»), начиная с прошлого лучшего.
@@ -435,6 +437,39 @@ class AppState extends ChangeNotifier {
     return (ConnectivityChecker.bestMs(quick), quick);
   }
 
+  /// Сколько профилей проверяется одним запуском ядра.
+  static const probeBatch = 32;
+
+  /// Проверяет сразу много профилей Xray: одно ядро, у каждого профиля свой
+  /// локальный вход, сайты открываются через все одновременно. Так подписка на
+  /// десятки стран и протоколов проверяется за секунды, а не по 6 с на каждый.
+  Future<Map<ProxyProfile, (int?, List<CheckResult>)>> _probeParallel(ServerEntry s, List<ProxyProfile> ps) async {
+    final out = <ProxyProfile, (int?, List<CheckResult>)>{};
+    for (var from = 0; from < ps.length; from += probeBatch) {
+      final batch = ps.sublist(from, (from + probeBatch).clamp(0, ps.length));
+      final ports = await LocalPorts.pickMany(batch.length);
+      activeProfile = null;
+      await engine.start(
+        XrayConfigBuilder.buildProbeJson(batch, ports, user: _proxyUser, password: _proxyPassword),
+        sessionName: s.name,
+      );
+      if (engine.current != VpnStatus.connected) {
+        // Ядро не приняло общий конфиг (например, один профиль битый) — по одному.
+        for (final p in batch) {
+          out[p] = await _probe(s, p);
+        }
+        continue;
+      }
+      final results = await Future.wait([
+        for (final port in ports) _checkerOn(port).checkAll(timeout: const Duration(seconds: 6)),
+      ]);
+      for (var i = 0; i < batch.length; i++) {
+        out[batch[i]] = (ConnectivityChecker.bestMs(results[i]), results[i]);
+      }
+    }
+    return out;
+  }
+
   Future<void> _connect(ServerEntry s) async {
     final list = candidates(s);
     if (list.length == 1) {
@@ -444,40 +479,68 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    // Перебираем все протоколы: ядро запустилось ещё не значит, что протокол
-    // не режется. Подключаемся к тому, через который сайты открылись быстрее.
-    ProxyProfile? best;
-    int? bestMs;
-    var bestChecks = <CheckResult>[];
-    for (var i = 0; i < list.length; i++) {
-      final p = list[i];
-      autoStatus = 'Проверяю ${i + 1} из ${list.length}: ${p.displayName}…';
+    // Ядро запустилось ещё не значит, что протокол не режется: проверяем,
+    // открываются ли сайты, и подключаемся к самому быстрому.
+    final xray = list.where((p) => p.protocol != ProxyProtocol.amneziawg).toList();
+    final awg = list.where((p) => p.protocol == ProxyProtocol.amneziawg).toList();
+    final results = <ProxyProfile, (int?, List<CheckResult>)>{};
+    if (xray.isNotEmpty) {
+      autoStatus = 'Проверяю ${_count(xray.length)} одновременно…';
       notifyListeners();
-      final (ms, quick) = await _probe(s, p);
-      probeResults = [...probeResults, (p, ms)];
-      if (ms != null && (bestMs == null || ms < bestMs)) {
-        best = p;
-        bestMs = ms;
-        bestChecks = quick;
+      results.addAll(await _probeParallel(s, xray));
+      probeResults = [for (final p in xray) (p, results[p]!.$1)];
+      notifyListeners();
+    }
+    // AmneziaWG не проверить через локальный прокси — подключаем по одному,
+    // и только если ничего из Xray не заработало.
+    if (!results.values.any((r) => r.$1 != null)) {
+      for (var i = 0; i < awg.length; i++) {
+        autoStatus = 'Проверяю AmneziaWG ${i + 1} из ${awg.length}…';
+        notifyListeners();
+        results[awg[i]] = await _probe(s, awg[i]);
+        probeResults = [...probeResults, (awg[i], results[awg[i]]!.$1)];
+        if (results[awg[i]]!.$1 != null) break;
       }
     }
 
-    if (best == null) {
+    final working = [
+      for (final p in list)
+        if (results[p]?.$1 != null) p,
+    ]..sort((a, b) => results[a]!.$1!.compareTo(results[b]!.$1!));
+    if (working.isEmpty) {
       await engine.stop();
       activeProfile = null;
       autoStatus = 'Ни один протокол не открыл сайты. Возможно, сервер недоступен.';
       notifyListeners();
       return;
     }
-    if (activeProfile != best) {
-      autoStatus = 'Подключаюсь: ${best.displayName}…';
-      notifyListeners();
-      await _startProfile(s, best);
+
+    // Подключаемся к лучшему; если он вдруг не поднялся — к следующему.
+    for (final p in working.take(3)) {
+      final already = activeProfile == p && engine.current == VpnStatus.connected;
+      if (!already) {
+        autoStatus = 'Подключаюсь: ${p.displayName}…';
+        notifyListeners();
+        if (!await _startProfile(s, p)) continue;
+      }
+      checks = results[p]!.$2;
+      s.lastGoodProfile = s.profiles.indexOf(p);
+      unawaited(_save());
+      autoStatus = null;
+      return;
     }
-    checks = bestChecks;
-    s.lastGoodProfile = s.profiles.indexOf(best);
-    unawaited(_save());
-    autoStatus = null;
+    await engine.stop();
+    activeProfile = null;
+    autoStatus = 'Не удалось подключиться. Попробуйте ещё раз.';
+    notifyListeners();
+  }
+
+  static String _count(int n) {
+    final m10 = n % 10, m100 = n % 100;
+    final word = m10 == 1 && m100 != 11
+        ? 'вариант'
+        : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? 'варианта' : 'вариантов');
+    return '$n $word';
   }
 
   /// Полная проверка для экрана: Telegram, YouTube и скорость загрузки.

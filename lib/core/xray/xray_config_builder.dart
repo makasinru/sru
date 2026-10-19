@@ -183,6 +183,46 @@ class XrayConfigBuilder {
     ];
   }
 
+  /// Конфиг для одновременной проверки многих профилей одним ядром: у каждого
+  /// свой HTTP-вход на 127.0.0.1:[ports][i], ведущий в его выход. TUN нет —
+  /// трафик устройства в это время никуда не идёт, проверка длится секунды.
+  static String buildProbeJson(List<ProxyProfile> ps, List<int> ports, {String? user, String? password}) {
+    final auth = user != null && password != null;
+    return jsonEncode({
+      'log': {'loglevel': 'warning'},
+      'dns': {'servers': const XrayOptions().dns, 'queryStrategy': 'UseIPv4'},
+      'inbounds': [
+        for (var i = 0; i < ps.length; i++)
+          {
+            'tag': 'in$i',
+            'listen': '127.0.0.1',
+            'port': ports[i],
+            'protocol': 'http',
+            if (auth)
+              'settings': {
+                'accounts': [
+                  {'user': user, 'pass': password},
+                ],
+              },
+          },
+      ],
+      'outbounds': [
+        for (var i = 0; i < ps.length; i++) {...outbound(ps[i]), 'tag': 'out$i'},
+        {'tag': 'direct', 'protocol': 'freedom'},
+      ],
+      'routing': {
+        'rules': [
+          for (var i = 0; i < ps.length; i++)
+            {
+              'type': 'field',
+              'inboundTag': ['in$i'],
+              'outboundTag': 'out$i',
+            },
+        ],
+      },
+    });
+  }
+
   static String buildJson(ProxyProfile p, [XrayOptions o = const XrayOptions()]) =>
       const JsonEncoder.withIndent('  ').convert(build(p, o));
 
