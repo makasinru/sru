@@ -87,7 +87,7 @@ class _ServerDetailsScreenState extends State<ServerDetailsScreen> {
         title: Text(s.name),
         actions: [
           IconButton(tooltip: 'Пинг', icon: const Icon(Icons.speed), onPressed: _pingAll),
-          if (s.subscriptionUrl != null)
+          if (s.refreshable)
             IconButton(
               tooltip: 'Обновить подписку',
               icon: const Icon(Icons.refresh),
@@ -100,6 +100,14 @@ class _ServerDetailsScreenState extends State<ServerDetailsScreen> {
         children: [
           if (info != null) _SubscriptionCard(info: info),
           const _Header('Протоколы'),
+          if (s.unsupported.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Пропущены (ядро их не поддерживает): ${s.unsupported.join(', ')}',
+                style: const TextStyle(color: SruColors.textTertiary, fontSize: 13),
+              ),
+            ),
           for (var i = 0; i < s.profiles.length; i++)
             _ProfileTile(
               profile: s.profiles[i],

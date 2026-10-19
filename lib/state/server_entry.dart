@@ -44,6 +44,12 @@ class ServerEntry {
   String? subscriptionUrl;
   SubscriptionInfo? subscriptionInfo;
 
+  /// Протоколы с сервера, которые ядро не поддерживает (TUIC, MTProto…).
+  List<String> unsupported = [];
+
+  /// Сервер, который обновляется сам: подписка или свой сервер с панелью 3x-ui.
+  bool get refreshable => subscriptionUrl != null || (ssh != null && panel != null && subId != null);
+
   /// Секреты (SSH, панель) хранятся в защищённом хранилище, здесь — только в памяти.
   SshCredentials? ssh;
   String? hostKey;
@@ -69,16 +75,22 @@ class ServerEntry {
     'subscriptionUrl': subscriptionUrl,
     'hostKey': hostKey,
     'subId': subId,
+    'unsupported': unsupported,
   };
 
-  factory ServerEntry.fromJson(Map<String, dynamic> j) => ServerEntry(
-    id: j['id'] as String,
-    name: j['name'] as String,
-    kind: ServerKind.values.byName(j['kind'] as String),
-    profiles: (j['profiles'] as List).map((e) => ProxyProfile.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
-    selectedProfile: j['selectedProfile'] as int?,
-    subscriptionUrl: j['subscriptionUrl'] as String?,
-    hostKey: j['hostKey'] as String?,
-    subId: j['subId'] as String?,
-  )..lastGoodProfile = j['lastGoodProfile'] as int?;
+  factory ServerEntry.fromJson(Map<String, dynamic> j) =>
+      ServerEntry(
+          id: j['id'] as String,
+          name: j['name'] as String,
+          kind: ServerKind.values.byName(j['kind'] as String),
+          profiles: (j['profiles'] as List)
+              .map((e) => ProxyProfile.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList(),
+          selectedProfile: j['selectedProfile'] as int?,
+          subscriptionUrl: j['subscriptionUrl'] as String?,
+          hostKey: j['hostKey'] as String?,
+          subId: j['subId'] as String?,
+        )
+        ..lastGoodProfile = j['lastGoodProfile'] as int?
+        ..unsupported = (j['unsupported'] as List?)?.cast<String>() ?? [];
 }

@@ -13,6 +13,7 @@ import '../core/links/subscription.dart';
 import '../core/models/proxy_profile.dart';
 import '../core/platform/windows_admin.dart';
 import '../core/server/remote_shell.dart';
+import '../core/server/server_session.dart';
 import '../core/server/xui_installer.dart';
 import '../core/vpn/connectivity_check.dart';
 import '../core/vpn/local_ports.dart';
@@ -287,7 +288,7 @@ class AppState extends ChangeNotifier {
           profiles: res.profiles,
           subscriptionUrl: t,
           subscriptionInfo: res.info,
-        ),
+        )..unsupported = res.unsupported,
       );
     }
     final profiles = SubscriptionParser.parseBody(t);
@@ -302,12 +303,64 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  /// Когда сервер обновлялся последний раз (в памяти: после запуска — заново).
+  final _refreshedAt = <String, DateTime>{};
+
+  /// Заново берёт список протоколов: у подписки — по её ссылке, у своего
+  /// сервера — из панели 3x-ui (через SSH). Так новые inbound'ы, добавленные
+  /// в панели (AmneziaWG и т. п.), появляются в приложении сами.
   Future<void> refreshSubscription(ServerEntry s) async {
-    if (s.subscriptionUrl == null) return;
-    final res = await SubscriptionParser.fetch(Uri.parse(s.subscriptionUrl!));
-    if (res.profiles.isNotEmpty) s.profiles = res.profiles;
-    s.subscriptionInfo = res.info;
+    List<ProxyProfile> profiles;
+    var unsupported = <String>[];
+    if (s.subscriptionUrl != null) {
+      final res = await SubscriptionParser.fetch(Uri.parse(s.subscriptionUrl!));
+      profiles = res.profiles;
+      unsupported = res.unsupported;
+      s.subscriptionInfo = res.info;
+    } else if (s.refreshable) {
+      final session = await ServerSession.open(s.ssh!, s.panel!, hostKey: s.hostKey);
+      try {
+        final text = (await session.api.subLinks(s.subId!)).join('\n');
+        profiles = LinkParser.parseMany(text);
+        unsupported = LinkParser.unsupported(text);
+      } finally {
+        await session.close();
+      }
+    } else {
+      return;
+    }
+    _refreshedAt[s.id] = DateTime.now();
+    s.unsupported = unsupported;
+    // Во время перебора протоколов список не трогаем — обновится в следующий раз.
+    if (profiles.isNotEmpty && !busy) {
+      String? key(int? i) => i != null && i >= 0 && i < s.profiles.length ? s.profiles[i].raw : null;
+      final lastGood = key(s.lastGoodProfile);
+      final selected = key(s.selectedProfile);
+      s.profiles = profiles;
+      int? find(String? raw) {
+        if (raw == null) return null;
+        final i = profiles.indexWhere((p) => p.raw == raw);
+        return i < 0 ? null : i;
+      }
+
+      s.lastGoodProfile = find(lastGood);
+      s.selectedProfile = find(selected);
+    }
     _changed();
+  }
+
+  /// Тихо обновляет все подписки и свои серверы, не чаще раза в [minAge].
+  Future<void> refreshAll({Duration minAge = const Duration(minutes: 5)}) async {
+    for (final s in [...servers]) {
+      if (!s.refreshable) continue;
+      final at = _refreshedAt[s.id];
+      if (at != null && DateTime.now().difference(at) < minAge) continue;
+      try {
+        await refreshSubscription(s).timeout(const Duration(seconds: 30));
+      } catch (_) {
+        // Нет сети или сервер недоступен — остаёмся со старым списком.
+      }
+    }
   }
 
   Future<ServerEntry> addInstalled(InstallResult r, SshCredentials ssh, String hostKey) {
@@ -424,7 +477,11 @@ class AppState extends ChangeNotifier {
       busy = false;
       notifyListeners();
     }
-    if (engine.current == VpnStatus.connected) unawaited(runChecks());
+    if (engine.current == VpnStatus.connected) {
+      unawaited(runChecks());
+      // Через туннель подписка откроется, даже если её адрес заблокирован.
+      unawaited(refreshAll());
+    }
   }
 
   /// Проверяет один профиль: запускает ядро и замеряет, открываются ли сайты.

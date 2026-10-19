@@ -70,24 +70,29 @@ class SubscriptionInfo {
 }
 
 class SubscriptionResult {
-  SubscriptionResult(this.profiles, this.info);
+  SubscriptionResult(this.profiles, this.info, [this.unsupported = const []]);
   final List<ProxyProfile> profiles;
   final SubscriptionInfo info;
+
+  /// Протоколы из подписки, которые ядро не поддерживает (TUIC, MTProto…).
+  final List<String> unsupported;
 }
 
 class SubscriptionParser {
   /// Тело подписки — либо base64 от списка ссылок, либо список ссылок как есть.
-  static List<ProxyProfile> parseBody(String body) {
+  static String decodeBody(String body) {
     final trimmed = body.trim();
-    if (trimmed.isEmpty) return [];
-    if (AmneziaWg.isConf(trimmed) || LinkParser.looksLikeLink(trimmed.split('\n').first.trim())) {
-      return LinkParser.parseMany(trimmed);
-    }
+    if (trimmed.isEmpty || AmneziaWg.isConf(trimmed) || trimmed.split('\n').first.contains('://')) return trimmed;
     try {
-      return LinkParser.parseMany(utf8.decode(decodeBase64Loose(trimmed)));
+      return utf8.decode(decodeBase64Loose(trimmed));
     } on FormatException {
-      return [];
+      return '';
     }
+  }
+
+  static List<ProxyProfile> parseBody(String body) {
+    final text = decodeBody(body);
+    return text.isEmpty ? [] : LinkParser.parseMany(text);
   }
 
   static Future<SubscriptionResult> fetch(Uri url, {http.Client? client, String? hwid}) async {
@@ -99,7 +104,12 @@ class SubscriptionParser {
       if (resp.statusCode != 200) {
         throw http.ClientException('HTTP ${resp.statusCode}', url);
       }
-      return SubscriptionResult(parseBody(utf8.decode(resp.bodyBytes)), SubscriptionInfo.fromHeaders(resp.headers));
+      final text = decodeBody(utf8.decode(resp.bodyBytes));
+      return SubscriptionResult(
+        text.isEmpty ? [] : LinkParser.parseMany(text),
+        SubscriptionInfo.fromHeaders(resp.headers),
+        LinkParser.unsupported(text),
+      );
     } finally {
       if (client == null) c.close();
     }

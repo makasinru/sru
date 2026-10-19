@@ -32,6 +32,28 @@ class LinkParser {
     return i > 0 && supportedSchemes.contains(s.substring(0, i).toLowerCase());
   }
 
+  /// Понятные названия ссылок, которые ядро не умеет: их пропускаем, но
+  /// показываем пользователю, чтобы он не гадал, куда они делись.
+  static const _unsupportedNames = {
+    'tuic': 'TUIC',
+    'tg': 'MTProto (прокси Telegram)',
+    'masque': 'MASQUE',
+    'hysteria': 'Hysteria 1',
+  };
+
+  /// Протоколы из [text], которые были пропущены (не поддерживаются ядром).
+  static List<String> unsupported(String text) {
+    final out = <String>{};
+    for (final line in const LineSplitter().convert(text)) {
+      final s = line.trim();
+      final i = s.indexOf('://');
+      if (i <= 0) continue;
+      final scheme = s.substring(0, i).toLowerCase();
+      if (!supportedSchemes.contains(scheme)) out.add(_unsupportedNames[scheme] ?? scheme.toUpperCase());
+    }
+    return out.toList();
+  }
+
   /// Разбирает текст с несколькими ссылками (по одной на строку), пропуская
   /// пустые строки, комментарии и неподдерживаемые схемы.
   static List<ProxyProfile> parseMany(String text) {

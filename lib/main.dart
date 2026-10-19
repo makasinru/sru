@@ -82,6 +82,8 @@ Future<void> main(List<String> args) async {
   );
   await loaded;
   unawaited(links.init(args));
+  // Новые протоколы с сервера (добавленные в панели 3x-ui) — сразу при запуске.
+  unawaited(state.refreshAll());
 
   // Автозапуск с Windows: окно скрыто, при желании сразу подключаемся.
   if (args.contains('--autostart') && state.connectOnStart && state.selectedServer != null) {
