@@ -43,11 +43,24 @@ android {
         }
     }
 
+    // Релизный ключ берётся из переменных окружения (в CI — из секретов
+    // репозитория, см. .github/workflows/android.yml). Без него APK подписывается
+    // debug-ключом, и обновление поверх такой сборки может не установиться.
+    val releaseKeystore = System.getenv("SRU_KEYSTORE")?.takeIf { it.isNotEmpty() }
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("SRU_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("SRU_KEY_ALIAS")
+                keyPassword = System.getenv("SRU_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (releaseKeystore != null) "release" else "debug")
         }
     }
 }
