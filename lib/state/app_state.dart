@@ -356,30 +356,25 @@ class AppState extends ChangeNotifier {
       checkerFactory?.call(xrayOptions) ??
       ConnectivityChecker(proxyPort: xrayOptions.httpPort, proxyUser: _proxyUser, proxyPassword: _proxyPassword);
 
-  /// Порядок перебора: выбранный профиль или все по очереди («Автоматически»),
-  /// начиная с того, что в прошлый раз оказался самым быстрым.
+  /// Порядок перебора: выбранный профиль (только в продвинутом режиме)
+  /// или все по очереди («Автоматически»), начиная с прошлого лучшего.
   List<ProxyProfile> candidates(ServerEntry s) {
-    if (s.selectedProfile != null && s.selectedProfile! < s.profiles.length) {
-      return [s.profiles[s.selectedProfile!]];
-    }
+    final sel = s.selectedProfile;
+    if (advanced && sel != null && sel < s.profiles.length) return [s.profiles[sel]];
     final list = [...s.profiles];
     final last = s.lastGoodProfile;
     if (last != null && last < list.length) list.insert(0, list.removeAt(last));
     return list;
   }
 
-  /// Задержка, при которой «Автоматически» сразу останавливается на протоколе.
-  static const fastEnoughMs = 350;
+  /// Результаты последнего автоподбора: профиль → задержка (null — не работает).
+  List<(ProxyProfile, int?)> probeResults = [];
 
   Future<bool> _startProfile(ServerEntry s, ProxyProfile p) async {
     activeProfile = p;
     notifyListeners();
     final awg = p.protocol == ProxyProtocol.amneziawg;
-    if (awg && Platform.isWindows && !WindowsAdmin.isAdmin) {
-      autoStatus = 'AmneziaWG на Windows работает только с правами администратора (как режим TUN)';
-      notifyListeners();
-      return false;
-    }
+    if (awg && Platform.isWindows && !WindowsAdmin.isAdmin) return false;
     await engine.start(
       // AmneziaWG — сам .conf: ядро поднимает amneziawg-go вместо Xray.
       awg ? p.params['conf']! : XrayConfigBuilder.buildJson(p, xrayOptions),
@@ -400,6 +395,7 @@ class AppState extends ChangeNotifier {
       await engine.stop();
       activeProfile = null;
       checks = [];
+      probeResults = [];
       autoStatus = null;
       notifyListeners();
       return;
@@ -411,6 +407,7 @@ class AppState extends ChangeNotifier {
       _proxyPassword = const Uuid().v4();
     }
     checks = [];
+    probeResults = [];
     busy = true;
     try {
       ports = await LocalPorts.pick();
@@ -422,56 +419,61 @@ class AppState extends ChangeNotifier {
     if (engine.current == VpnStatus.connected) unawaited(runChecks());
   }
 
+  /// Проверяет один профиль: запускает ядро и замеряет, открываются ли сайты.
+  Future<(int?, List<CheckResult>)> _probe(ServerEntry s, ProxyProfile p) async {
+    final sw = Stopwatch()..start();
+    if (!await _startProfile(s, p)) return (null, <CheckResult>[]);
+    // AmneziaWG: ядро сообщает «подключено» только после рукопожатия.
+    if (p.protocol == ProxyProtocol.amneziawg) return (sw.elapsedMilliseconds, <CheckResult>[]);
+    final quick = await _checker.checkAll(
+      sites: ConnectivityChecker.targets.take(2).toList(),
+      timeout: const Duration(seconds: 6),
+    );
+    return (ConnectivityChecker.bestMs(quick), quick);
+  }
+
   Future<void> _connect(ServerEntry s) async {
     final list = candidates(s);
-    final auto = list.length > 1;
+    if (list.length == 1) {
+      final (_, quick) = await _probe(s, list.single);
+      checks = quick;
+      autoStatus = null;
+      return;
+    }
 
-    // Перебор: ядро запустилось ещё не значит, что протокол не режется.
-    // Проверяем реальную загрузку Telegram и YouTube и выбираем самый быстрый.
+    // Перебираем все протоколы: ядро запустилось ещё не значит, что протокол
+    // не режется. Подключаемся к тому, через который сайты открылись быстрее.
     ProxyProfile? best;
     int? bestMs;
-    for (final p in list) {
-      if (auto) {
-        autoStatus = 'Пробуем ${p.protocol.title}…';
-        notifyListeners();
-      }
-      if (!await _startProfile(s, p)) continue;
-      if (p.protocol == ProxyProtocol.amneziawg) {
-        checks = [];
-        best = p;
-        bestMs = fastEnoughMs;
-        break; // рукопожатие уже проверено ядром
-      }
-      final quick = await _checker.checkAll(
-        sites: ConnectivityChecker.targets.take(2).toList(),
-        timeout: const Duration(seconds: 6),
-      );
-      final ms = ConnectivityChecker.bestMs(quick);
-      if (!auto) {
-        checks = quick;
-        break;
-      }
-      if (ms == null) continue; // протокол заблокирован — дальше
-      if (bestMs == null || ms < bestMs) {
+    var bestChecks = <CheckResult>[];
+    for (var i = 0; i < list.length; i++) {
+      final p = list[i];
+      autoStatus = 'Проверяю ${i + 1} из ${list.length}: ${p.displayName}…';
+      notifyListeners();
+      final (ms, quick) = await _probe(s, p);
+      probeResults = [...probeResults, (p, ms)];
+      if (ms != null && (bestMs == null || ms < bestMs)) {
         best = p;
         bestMs = ms;
-        checks = quick;
+        bestChecks = quick;
       }
-      if (ms <= fastEnoughMs) break;
     }
 
-    if (auto) {
-      if (best == null) {
-        await engine.stop();
-        activeProfile = null;
-        autoStatus = 'Ни один протокол не открыл сайты. Возможно, сервер недоступен.';
-        notifyListeners();
-        return;
-      }
-      if (activeProfile != best) await _startProfile(s, best);
-      s.lastGoodProfile = s.profiles.indexOf(best);
-      unawaited(_save());
+    if (best == null) {
+      await engine.stop();
+      activeProfile = null;
+      autoStatus = 'Ни один протокол не открыл сайты. Возможно, сервер недоступен.';
+      notifyListeners();
+      return;
     }
+    if (activeProfile != best) {
+      autoStatus = 'Подключаюсь: ${best.displayName}…';
+      notifyListeners();
+      await _startProfile(s, best);
+    }
+    checks = bestChecks;
+    s.lastGoodProfile = s.profiles.indexOf(best);
+    unawaited(_save());
     autoStatus = null;
   }
 

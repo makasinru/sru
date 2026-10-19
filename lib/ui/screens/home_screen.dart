@@ -24,6 +24,7 @@ class HomeScreen extends StatelessWidget {
         _ConnectButton(state: state),
         const SizedBox(height: 24),
         _StatusText(state: state),
+        if (state.probeResults.isNotEmpty) ...[const SizedBox(height: 12), _ProbeList(state: state)],
         if (state.status == VpnStatus.connected && !state.busy) ...[
           const SizedBox(height: 16),
           _ChecksRow(state: state),
@@ -124,7 +125,7 @@ class _StatusText extends StatelessWidget {
         state.autoStatus ??
         switch (state.status) {
           VpnStatus.connected =>
-            'Подключено${state.advanced && state.activeProfile != null ? ' · ${state.activeProfile!.protocol.title}' : ''}',
+            'Подключено${state.activeProfile != null ? ' · ${state.activeProfile!.displayName}' : ''}',
           VpnStatus.connecting => 'Подключение…',
           VpnStatus.disconnecting => 'Отключение…',
           VpnStatus.error => state.engine.lastError ?? 'Ошибка подключения',
@@ -139,6 +140,41 @@ class _StatusText extends StatelessWidget {
           fontSize: 16,
           color: state.status == VpnStatus.error ? SruColors.destructive : SruColors.textTertiary,
         ),
+      ),
+    );
+  }
+}
+
+/// Итоги автоподбора: какой протокол сколько показал, выбранный отмечен.
+class _ProbeList extends StatelessWidget {
+  const _ProbeList({required this.state});
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final chosen = state.busy ? null : state.activeProfile;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final (p, ms) in state.probeResults)
+            Chip(
+              visualDensity: VisualDensity.compact,
+              avatar: Icon(
+                ms == null ? Icons.cancel : (identical(p, chosen) ? Icons.star : Icons.check_circle),
+                size: 16,
+                color: ms == null
+                    ? SruColors.destructive
+                    : (identical(p, chosen) ? SruColors.accent : SruColors.success),
+              ),
+              label: Text('${p.displayName} · ${ms == null ? 'нет' : '$ms мс'}', style: const TextStyle(fontSize: 12)),
+              backgroundColor: SruColors.bgSurface,
+              side: BorderSide(color: identical(p, chosen) ? SruColors.accent : SruColors.border),
+            ),
+        ],
       ),
     );
   }

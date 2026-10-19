@@ -92,26 +92,41 @@ void main() {
     return (state, engine, s);
   }
 
-  test('пропускает заблокированный протокол и останавливается на быстром', () async {
+  test('проверяет все протоколы и подключается к самому быстрому', () async {
     final (state, engine, s) = await setup({'1001': null, '1002': 120, '1003': 50});
     await state.toggle();
-    expect(engine.started.take(2), ['1001', '1002']); // 1002 уже достаточно быстрый
-    expect(state.activeProfile, s.profiles[1]);
-    expect(s.lastGoodProfile, 1);
+    expect(engine.started, ['1001', '1002', '1003']); // последний и есть лучший — без переподключения
+    expect(state.activeProfile, s.profiles[2]);
+    expect(s.lastGoodProfile, 2);
+    expect(state.probeResults.map((r) => r.$2), [null, 120, 50]);
   });
 
-  test('если все медленные — выбирает самый быстрый и переподключается к нему', () async {
-    final (state, engine, s) = await setup({'1001': 900, '1002': 600, '1003': 700});
+  test('после перебора переподключается к лучшему', () async {
+    final (state, engine, s) = await setup({'1001': 900, '1002': 300, '1003': 700});
     await state.toggle();
     expect(engine.started, ['1001', '1002', '1003', '1002']);
     expect(state.activeProfile, s.profiles[1]);
+    expect(state.checks.first.ms, 300);
   });
 
-  test('в следующий раз начинает с прошлого лучшего', () async {
+  test('прошлый лучший проверяется первым, но остальные тоже', () async {
     final (state, engine, s) = await setup({'1001': 100, '1002': 100, '1003': 100});
     s.lastGoodProfile = 2;
     await state.toggle();
-    expect(engine.started, ['1003']);
+    expect(engine.started, ['1003', '1001', '1002', '1003']);
+  });
+
+  test('выбор протокола из продвинутого режима не мешает простому', () async {
+    final (state, engine, s) = await setup({'1001': 500, '1002': 100, '1003': 500});
+    s.selectedProfile = 0;
+    await state.toggle();
+    expect(engine.started.take(3), ['1001', '1002', '1003']);
+    expect(state.activeProfile, s.profiles[1]);
+    await state.toggle();
+    state.mode = UiMode.advanced;
+    engine.started.clear();
+    await state.toggle();
+    expect(engine.started, ['1001']);
   });
 
   test('ни один не открыл сайты — отключается с понятным сообщением', () async {

@@ -57,6 +57,9 @@ class ProxyProfile {
     return '${network.toUpperCase()}$sec';
   }
 
+  /// Название для простого режима: протокол и транспорт («VLESS · XHTTP + REALITY»).
+  String get displayName => '${protocol.title} · $transportLabel';
+
   Map<String, dynamic> toJson() => {
     'protocol': protocol.name,
     'host': host,
