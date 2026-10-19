@@ -9,6 +9,11 @@
         android:label="SruNaZapret"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Impeller через OpenGL ES: на части телефонов (в том числе с Android 16)
+             Vulkan-драйвер рисует чёрный экран вместо интерфейса. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.ImpellerBackend"
+            android:value="opengles" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

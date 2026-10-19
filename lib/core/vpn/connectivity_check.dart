@@ -35,8 +35,11 @@ class ConnectivityChecker {
     CheckTarget('YouTube', 'https://www.youtube.com/generate_204'),
   ];
 
+  /// Сколько максимум скачивает один замер скорости: 10 МБ.
+  static const speedBytes = 10 * 1000 * 1000;
+
   /// Файл для замера скорости (Cloudflare отдаёт столько байт, сколько попросили).
-  static const defaultSpeedUrl = 'https://speed.cloudflare.com/__down?bytes=25000000';
+  static const defaultSpeedUrl = 'https://speed.cloudflare.com/__down?bytes=$speedBytes';
 
   Future<List<CheckResult>> checkAll({
     List<CheckTarget> sites = targets,
@@ -52,8 +55,8 @@ class ConnectivityChecker {
   }
 
   /// Скорость загрузки через туннель, Мбит/с; null — не удалось скачать.
-  /// Качает не дольше [duration], чтобы не тратить трафик на медленной сети.
-  Future<double?> speedTest({Duration duration = const Duration(seconds: 6)}) async {
+  /// Качает не больше [speedBytes] и не дольше [duration], чтобы не тратить трафик.
+  Future<double?> speedTest({Duration duration = const Duration(seconds: 4)}) async {
     final client = _client(const Duration(seconds: 8));
     var bytes = 0;
     final sw = Stopwatch();

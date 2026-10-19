@@ -24,7 +24,7 @@ class LocalChecker extends ConnectivityChecker {
   }) => super.checkAll(sites: [CheckTarget('local', site)], timeout: const Duration(seconds: 3));
 
   @override
-  Future<double?> speedTest({Duration duration = const Duration(seconds: 6)}) async => null;
+  Future<double?> speedTest({Duration duration = const Duration(seconds: 4)}) async => null;
 }
 
 void main() {

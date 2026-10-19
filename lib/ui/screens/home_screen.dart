@@ -240,14 +240,18 @@ class _ChecksRow extends StatelessWidget {
 
   Widget _speedChip() {
     final mbps = state.speedMbps;
-    final (icon, color, text) = state.speedTesting
-        ? (Icons.speed, SruColors.textTertiary, 'Скорость · замеряем…')
-        : mbps == null
-        ? (Icons.speed, SruColors.textTertiary, 'Скорость · —')
-        : (Icons.speed, SruColors.success, 'Скорость · ${mbps >= 10 ? mbps.round() : mbps.toStringAsFixed(1)} Мбит/с');
-    return Chip(
-      avatar: Icon(icon, size: 18, color: color),
+    final (color, text) = state.speedTesting
+        ? (SruColors.textTertiary, 'Скорость · замеряем…')
+        : mbps != null
+        ? (SruColors.success, 'Скорость · ${mbps >= 10 ? mbps.round() : mbps.toStringAsFixed(1)} Мбит/с')
+        : state.autoSpeedTest
+        ? (SruColors.textTertiary, 'Скорость · —')
+        : (SruColors.textTertiary, 'Замерить скорость (до 10 МБ)');
+    return ActionChip(
+      avatar: Icon(Icons.speed, size: 18, color: color),
       label: Text(text),
+      tooltip: 'Скачивает до 10 МБ через VPN',
+      onPressed: state.speedTesting || state.checking ? null : state.measureSpeed,
       backgroundColor: SruColors.bgSurface,
       side: const BorderSide(color: SruColors.border),
     );

@@ -121,7 +121,7 @@ class AppState extends ChangeNotifier {
 
   Future<Map<String, dynamic>?> _readSecret(String id) async {
     try {
-      final v = await _secure.read(key: 'server.$id');
+      final v = await _secure.read(key: 'server.$id').timeout(const Duration(seconds: 2));
       return v == null ? null : jsonDecode(v) as Map<String, dynamic>;
     } catch (_) {
       return null;
@@ -543,18 +543,29 @@ class AppState extends ChangeNotifier {
     return '$n $word';
   }
 
-  /// Полная проверка для экрана: Telegram, YouTube и скорость загрузки.
+  /// Замер скорости тратит до 10 МБ трафика, поэтому на телефоне (мобильный
+  /// интернет, лимитные тарифы) он запускается только по нажатию.
+  bool get autoSpeedTest => !_mobile;
+
+  /// Полная проверка для экрана: Telegram, YouTube и (на ПК) скорость загрузки.
   Future<void> runChecks() async {
     if (status != VpnStatus.connected || checking || speedTesting || _activeIsAwg) return;
     checking = true;
+    speedMbps = null;
+    notifyListeners();
+    checks = await _checker.checkAll();
+    checking = false;
+    notifyListeners();
+    if (autoSpeedTest) await measureSpeed();
+  }
+
+  /// Скорость загрузки через VPN (до 10 МБ, до 4 секунд).
+  Future<void> measureSpeed() async {
+    if (status != VpnStatus.connected || speedTesting || _activeIsAwg) return;
     speedTesting = true;
     speedMbps = null;
     notifyListeners();
-    final checker = _checker;
-    checks = await checker.checkAll();
-    checking = false;
-    notifyListeners();
-    final mbps = await checker.speedTest();
+    final mbps = await _checker.speedTest();
     speedTesting = false;
     if (status == VpnStatus.connected) speedMbps = mbps;
     notifyListeners();

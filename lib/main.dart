@@ -34,8 +34,26 @@ Future<void> main(List<String> args) async {
     if (instance == null) exit(0);
   }
 
+  // В релизе Flutter вместо упавшего виджета рисует пустоту — на тёмной теме
+  // это выглядит как чёрный экран. Показываем саму ошибку, чтобы её можно было прислать.
+  ErrorWidget.builder = (details) => Material(
+    color: const Color(0xFF101012),
+    child: SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          'Ошибка интерфейса:\n${details.exceptionAsString()}',
+          style: const TextStyle(color: Color(0xFFFF6B6B), fontSize: 13),
+        ),
+      ),
+    ),
+  );
+
   final state = AppState();
-  await state.load();
+  // На телефоне не ждём чтения настроек до первого кадра: если хранилище
+  // зависнет, пользователь иначе видит только чёрный экран запуска.
+  final loaded = state.load().timeout(const Duration(seconds: 5), onTimeout: () {});
+  if (desktop) await loaded;
   if (Platform.isWindows) {
     try {
       WindowsIntegration.registerUrlProtocol();
@@ -62,6 +80,7 @@ Future<void> main(List<String> args) async {
       child: SruApp(shell: shell),
     ),
   );
+  await loaded;
   unawaited(links.init(args));
 
   // Автозапуск с Windows: окно скрыто, при желании сразу подключаемся.
