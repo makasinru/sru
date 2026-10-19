@@ -4,9 +4,16 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
+import '../xray/split_tunnel.dart';
 import 'windows_proxy.dart';
 
 enum VpnStatus { disconnected, connecting, connected, disconnecting, error }
+
+class InstalledApp {
+  InstalledApp(this.packageName, this.label);
+  final String packageName;
+  final String label;
+}
 
 /// Абстракция над ядром. На Android/iOS это нативный VpnService/NetworkExtension
 /// с libXray (так устроен Happ: libgojni.so = Xray-core через gomobile,
@@ -16,8 +23,17 @@ abstract class VpnEngine {
   VpnStatus get current;
   String? get lastError;
 
-  Future<void> start(String xrayConfigJson, {required String sessionName});
+  /// [appSplit]/[apps] — раздельное туннелирование приложений (только Android).
+  Future<void> start(
+    String xrayConfigJson, {
+    required String sessionName,
+    SplitMode appSplit = SplitMode.off,
+    List<String> apps = const [],
+  });
   Future<void> stop();
+
+  /// Установленные приложения для экрана раздельного туннелирования (Android).
+  Future<List<InstalledApp>> installedApps() async => const [];
 
   /// Версия ядра (для экрана «О приложении» в продвинутом режиме).
   Future<String?> coreVersion();
@@ -39,6 +55,9 @@ abstract class _BaseEngine implements VpnEngine {
   VpnStatus get current => _current;
   @override
   String? get lastError => _lastError;
+
+  @override
+  Future<List<InstalledApp>> installedApps() async => const [];
 
   void emit(VpnStatus s, [String? error]) {
     _current = s;
@@ -68,11 +87,21 @@ class MethodChannelVpnEngine extends _BaseEngine {
   static const _events = EventChannel('ru.sru/vpn/status');
 
   @override
-  Future<void> start(String xrayConfigJson, {required String sessionName}) async {
+  Future<void> start(
+    String xrayConfigJson, {
+    required String sessionName,
+    SplitMode appSplit = SplitMode.off,
+    List<String> apps = const [],
+  }) async {
     emit(VpnStatus.connecting);
     try {
       // Нативная сторона отвечает, только когда ядро подключилось или упало.
-      await _method.invokeMethod('start', {'config': xrayConfigJson, 'name': sessionName});
+      await _method.invokeMethod('start', {
+        'config': xrayConfigJson,
+        'name': sessionName,
+        'appMode': appSplit.name,
+        'apps': apps,
+      });
       emit(VpnStatus.connected);
     } on PlatformException catch (e) {
       emit(VpnStatus.error, e.message);
@@ -90,6 +119,16 @@ class MethodChannelVpnEngine extends _BaseEngine {
       // нечего останавливать
     }
     emit(VpnStatus.disconnected);
+  }
+
+  @override
+  Future<List<InstalledApp>> installedApps() async {
+    try {
+      final list = await _method.invokeListMethod<Map<Object?, Object?>>('installedApps') ?? [];
+      return [for (final m in list) InstalledApp(m['package'] as String, m['label'] as String)];
+    } on MissingPluginException {
+      return const [];
+    }
   }
 
   @override
@@ -134,7 +173,12 @@ class DesktopXrayEngine extends _BaseEngine {
   }
 
   @override
-  Future<void> start(String xrayConfigJson, {required String sessionName}) async {
+  Future<void> start(
+    String xrayConfigJson, {
+    required String sessionName,
+    SplitMode appSplit = SplitMode.off, // на десктопе не поддерживается
+    List<String> apps = const [],
+  }) async {
     emit(VpnStatus.connecting);
     final dir = await Directory.systemTemp.createTemp('sru');
     final cfg = File('${dir.path}${Platform.pathSeparator}config.json')..writeAsStringSync(xrayConfigJson);

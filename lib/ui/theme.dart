@@ -16,6 +16,16 @@ class SruColors {
   static const action = Color(0xFFE4E4E7);
   static const destructive = Color(0xFFF87171);
   static const success = Color(0xFF4ADE80);
+
+  /// Цвета логотипа (assets/logo.png): бирюза → голубой → фиолетовый → оранжевый.
+  static const logoGradient = [
+    Color(0xFF7CCFC0),
+    Color(0xFF8DCDEB),
+    Color(0xFF7466C4),
+    Color(0xFFA9A4BD),
+    Color(0xFFF7A040),
+    Color(0xFF7CCFC0),
+  ];
 }
 
 ThemeData buildTheme() {

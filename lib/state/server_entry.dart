@@ -34,6 +34,10 @@ class ServerEntry {
   final ServerKind kind;
   List<ProxyProfile> profiles;
 
+  /// Профиль, который в прошлый раз оказался самым быстрым из рабочих:
+  /// в режиме «Автоматически» пробуется первым.
+  int? lastGoodProfile;
+
   /// null — «Автоматически»: перебор профилей по порядку (простой режим).
   int? selectedProfile;
 
@@ -61,6 +65,7 @@ class ServerEntry {
     'kind': kind.name,
     'profiles': profiles.map((p) => p.toJson()).toList(),
     'selectedProfile': selectedProfile,
+    'lastGoodProfile': lastGoodProfile,
     'subscriptionUrl': subscriptionUrl,
     'hostKey': hostKey,
     'subId': subId,
@@ -75,5 +80,5 @@ class ServerEntry {
     subscriptionUrl: j['subscriptionUrl'] as String?,
     hostKey: j['hostKey'] as String?,
     subId: j['subId'] as String?,
-  );
+  )..lastGoodProfile = j['lastGoodProfile'] as int?;
 }

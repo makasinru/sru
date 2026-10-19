@@ -35,6 +35,8 @@ class SruVpnService : VpnService() {
         const val ACTION_STOP = "ru.sru.sru.vpn.STOP"
         const val EXTRA_CONFIG = "config"
         const val EXTRA_NAME = "name"
+        const val EXTRA_APP_MODE = "appMode" // off | onlyListed | exceptListed
+        const val EXTRA_APPS = "apps"
 
         private const val TAG = "SruVpn"
         private const val CHANNEL_ID = "vpn"
@@ -66,9 +68,13 @@ class SruVpnService : VpnService() {
                     VpnStatusBus.post(VpnStatusBus.ERROR, "Нет конфигурации")
                     return START_NOT_STICKY
                 }
+                val split = AppSplit(
+                    intent.getStringExtra(EXTRA_APP_MODE) ?: "off",
+                    intent.getStringArrayListExtra(EXTRA_APPS).orEmpty(),
+                )
                 goForeground(name)
                 VpnStatusBus.post(VpnStatusBus.CONNECTING)
-                worker.execute { start(config, name) }
+                worker.execute { start(config, name, split) }
             }
             ACTION_STOP -> worker.execute { stop(null) }
         }
@@ -86,12 +92,12 @@ class SruVpnService : VpnService() {
         super.onDestroy()
     }
 
-    private fun start(config: String, name: String) {
+    private fun start(config: String, name: String, split: AppSplit) {
         stopInternal()
         stopping = false
         try {
             val assetDir = CoreAssets.ensure(this)
-            val tunFd = establishTun(name)
+            val tunFd = establishTun(name, split)
             tun = tunFd
             val dir = noBackupFilesDir
             val cfg = File(dir, "config.json").apply { writeText(config) }
@@ -130,7 +136,7 @@ class SruVpnService : VpnService() {
         }
     }
 
-    private fun establishTun(name: String): ParcelFileDescriptor {
+    private fun establishTun(name: String, split: AppSplit): ParcelFileDescriptor {
         val builder = Builder()
             .setSession(name)
             .setMtu(MTU)
@@ -139,8 +145,8 @@ class SruVpnService : VpnService() {
             .addAddress(TUN_ADDRESS6, 126)
             .addRoute("::", 0)
             .addDnsServer(TUN_DNS)
-            .addDisallowedApplication(packageName)
             .setConfigureIntent(openAppIntent())
+        split.apply(builder, packageName)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setMetered(false)
         return builder.establish() ?: throw IOException("Нет разрешения на VPN")
     }
@@ -248,6 +254,34 @@ class SruVpnService : VpnService() {
     private fun updateNotification(name: String) {
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, notification(name, "Подключено"))
+    }
+}
+
+/**
+ * Раздельное туннелирование приложений, как в Amnezia. Allowed и Disallowed
+ * в одном Builder смешивать нельзя. Само приложение (и ядро с тем же UID) должно
+ * идти мимо VPN: в режиме «только эти» оно не попадает в список, в остальных
+ * режимах исключается явно.
+ */
+private class AppSplit(val mode: String, val packages: List<String>) {
+    fun apply(builder: VpnService.Builder, self: String) {
+        val others = packages.filter { it != self }
+        if (mode == "onlyListed" && others.isNotEmpty()) {
+            others.forEach { pkg -> ignoreMissing { builder.addAllowedApplication(pkg) } }
+            return
+        }
+        builder.addDisallowedApplication(self)
+        if (mode == "exceptListed") {
+            others.forEach { pkg -> ignoreMissing { builder.addDisallowedApplication(pkg) } }
+        }
+    }
+
+    /** Приложение могли удалить после того, как его отметили. */
+    private inline fun ignoreMissing(block: () -> Unit) {
+        try {
+            block()
+        } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+        }
     }
 }
 

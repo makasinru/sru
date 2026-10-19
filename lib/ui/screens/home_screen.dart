@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/vpn/connectivity_check.dart';
 import '../../core/vpn/vpn_engine.dart';
 import '../../state/app_state.dart';
 import '../../state/server_entry.dart';
@@ -22,6 +23,10 @@ class HomeScreen extends StatelessWidget {
         _ConnectButton(state: state),
         const SizedBox(height: 24),
         _StatusText(state: state),
+        if (state.status == VpnStatus.connected && !state.busy) ...[
+          const SizedBox(height: 16),
+          _ChecksRow(state: state),
+        ],
         const Spacer(),
         if (server != null)
           Padding(
@@ -66,35 +71,41 @@ class _ConnectButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = state.status;
-    final connected = s == VpnStatus.connected;
-    final busy = s == VpnStatus.connecting || s == VpnStatus.disconnecting;
-    final ring = connected ? SruColors.accent : SruColors.border;
+    final connected = s == VpnStatus.connected && !state.busy;
+    final busy = state.busy || s == VpnStatus.connecting || s == VpnStatus.disconnecting;
     return Semantics(
       button: true,
       label: connected ? 'Отключиться' : 'Подключиться',
       child: GestureDetector(
         onTap: busy ? null : state.toggle,
+        // Кольцо: серое, при подключении — в цветах логотипа.
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           width: 200,
           height: 200,
+          padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: SruColors.bgSurface,
-            border: Border.all(color: ring, width: 6),
-            boxShadow: [if (connected) BoxShadow(color: SruColors.accentDark.withValues(alpha: 0.45), blurRadius: 60)],
+            color: connected ? null : SruColors.border,
+            gradient: connected ? const SweepGradient(colors: SruColors.logoGradient) : null,
+            boxShadow: [
+              if (connected) BoxShadow(color: const Color(0xFF7466C4).withValues(alpha: 0.45), blurRadius: 60),
+            ],
           ),
-          child: Center(
-            child: busy
-                ? const SizedBox(width: 48, height: 48, child: CircularProgressIndicator(strokeWidth: 3))
-                : Text(
-                    connected ? 'Отключиться' : 'Подключиться',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: connected ? SruColors.accent : SruColors.textPrimary,
+          child: Container(
+            decoration: const BoxDecoration(shape: BoxShape.circle, color: SruColors.bgSurface),
+            child: Center(
+              child: busy
+                  ? const SizedBox(width: 48, height: 48, child: CircularProgressIndicator(strokeWidth: 3))
+                  : Text(
+                      connected ? 'Отключиться' : 'Подключиться',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: connected ? SruColors.accent : SruColors.textPrimary,
+                      ),
                     ),
-                  ),
+            ),
           ),
         ),
       ),
@@ -108,14 +119,16 @@ class _StatusText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = switch (state.status) {
-      VpnStatus.connected =>
-        'Подключено${state.advanced && state.activeProfile != null ? ' · ${state.activeProfile!.protocol.title}' : ''}',
-      VpnStatus.connecting => 'Подключение…',
-      VpnStatus.disconnecting => 'Отключение…',
-      VpnStatus.error => state.engine.lastError ?? 'Ошибка подключения',
-      VpnStatus.disconnected => 'Не подключено',
-    };
+    final text =
+        state.autoStatus ??
+        switch (state.status) {
+          VpnStatus.connected =>
+            'Подключено${state.advanced && state.activeProfile != null ? ' · ${state.activeProfile!.protocol.title}' : ''}',
+          VpnStatus.connecting => 'Подключение…',
+          VpnStatus.disconnecting => 'Отключение…',
+          VpnStatus.error => state.engine.lastError ?? 'Ошибка подключения',
+          VpnStatus.disconnected => 'Не подключено',
+        };
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Text(
@@ -126,6 +139,49 @@ class _StatusText extends StatelessWidget {
           color: state.status == VpnStatus.error ? SruColors.destructive : SruColors.textTertiary,
         ),
       ),
+    );
+  }
+}
+
+/// Проверка «работает ли на самом деле»: Telegram, YouTube, Microsoft и задержка.
+class _ChecksRow extends StatelessWidget {
+  const _ChecksRow({required this.state});
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final results = {for (final r in state.checks) r.target.name: r};
+    return Column(
+      children: [
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
+          children: [for (final t in ConnectivityChecker.targets) _chip(t.name, results[t.name])],
+        ),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: state.checking ? null : state.runChecks,
+          icon: state.checking
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.refresh, size: 18),
+          label: Text(state.checking ? 'Проверяем…' : 'Проверить подключение'),
+        ),
+      ],
+    );
+  }
+
+  Widget _chip(String name, CheckResult? r) {
+    final (icon, color, text) = switch (r) {
+      null => (Icons.more_horiz, SruColors.textTertiary, name),
+      CheckResult(ok: true) => (Icons.check_circle, SruColors.success, '$name · ${r.ms} мс'),
+      _ => (Icons.cancel, SruColors.destructive, '$name · нет'),
+    };
+    return Chip(
+      avatar: Icon(icon, size: 18, color: color),
+      label: Text(text),
+      backgroundColor: SruColors.bgSurface,
+      side: const BorderSide(color: SruColors.border),
     );
   }
 }

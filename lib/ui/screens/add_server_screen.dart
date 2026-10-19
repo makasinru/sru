@@ -20,7 +20,11 @@ class AddServerScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            if (isOnboarding) const SizedBox(height: 48),
+            if (isOnboarding) ...[
+              const SizedBox(height: 24),
+              Center(child: Image.asset('assets/logo.png', width: 160, height: 160)),
+              const SizedBox(height: 16),
+            ],
             Text(
               isOnboarding ? 'SruNaZapret' : 'Новое подключение',
               style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w700),

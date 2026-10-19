@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/xray/xray_config_builder.dart';
 import '../../state/app_state.dart';
 import '../theme.dart';
+import 'split_tunnel_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -62,6 +63,20 @@ class SettingsScreen extends StatelessWidget {
           ),
         ],
         if (state.advanced) ...[
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.call_split),
+              title: const Text('Раздельное туннелирование'),
+              subtitle: Text(
+                Platform.isAndroid
+                    ? 'Сайты: ${state.siteSplit.title.toLowerCase()} · Приложения: ${state.appSplit.title.toLowerCase()}'
+                    : 'Сайты: ${state.siteSplit.title.toLowerCase()}',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => const SplitTunnelScreen())),
+            ),
+          ),
           const SizedBox(height: 16),
           Card(
             child: SwitchListTile(

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/proxy_profile.dart';
+import 'split_tunnel.dart';
 
 /// Пресеты маршрутизации. Простой режим показывает только их,
 /// продвинутый — ещё и собственные правила.
@@ -36,6 +37,10 @@ class XrayOptions {
     this.dns = const ['https://1.1.1.1/dns-query', '8.8.8.8'],
     this.blockAds = false,
     this.mtu = 1500,
+    this.siteSplit = SplitMode.off,
+    this.splitSites = const [],
+    this.proxyUser,
+    this.proxyPassword,
   });
 
   /// true — TUN-интерфейс (весь трафик устройства, как VPN в Amnezia/Happ),
@@ -48,6 +53,18 @@ class XrayOptions {
   final List<String> dns;
   final bool blockAds;
   final int mtu;
+
+  /// Раздельное туннелирование по сайтам (продвинутый режим).
+  final SplitMode siteSplit;
+  final List<String> splitSites;
+
+  /// Пароль на локальные SOCKS/HTTP-входы. На Android они нужны только самому
+  /// приложению (проверка подключения), и без пароля другие приложения могли бы
+  /// найти прокси на 127.0.0.1 и ходить через него или вычислить VPN.
+  final String? proxyUser;
+  final String? proxyPassword;
+
+  bool get _auth => proxyUser != null && proxyPassword != null;
 }
 
 /// Превращает [ProxyProfile] в полный конфиг Xray-core.
@@ -62,10 +79,29 @@ class XrayConfigBuilder {
           'listen': '127.0.0.1',
           'port': o.socksPort,
           'protocol': 'socks',
-          'settings': {'auth': 'noauth', 'udp': true},
+          'settings': {
+            'auth': o._auth ? 'password' : 'noauth',
+            'udp': true,
+            if (o._auth)
+              'accounts': [
+                {'user': o.proxyUser, 'pass': o.proxyPassword},
+              ],
+          },
           'sniffing': _sniffing,
         },
-        {'tag': 'http', 'listen': '127.0.0.1', 'port': o.httpPort, 'protocol': 'http', 'sniffing': _sniffing},
+        {
+          'tag': 'http',
+          'listen': '127.0.0.1',
+          'port': o.httpPort,
+          'protocol': 'http',
+          if (o._auth)
+            'settings': {
+              'accounts': [
+                {'user': o.proxyUser, 'pass': o.proxyPassword},
+              ],
+            },
+          'sniffing': _sniffing,
+        },
         if (o.tun)
           {
             'tag': 'tun',
@@ -97,7 +133,8 @@ class XrayConfigBuilder {
               'outboundTag': 'block',
             },
           ...o.customRules.map((r) => r.toJson()),
-          if (o.routing == RoutingPreset.bypassRu) ...[
+          ..._splitRules(o),
+          if (o.routing == RoutingPreset.bypassRu && !_onlyListed(o)) ...[
             {
               'type': 'field',
               'domain': ['geosite:category-ru', 'domain:ru', 'domain:xn--p1ai'],
@@ -109,9 +146,24 @@ class XrayConfigBuilder {
               'outboundTag': 'direct',
             },
           ],
+          // «Только эти через VPN»: всё, что не попало в список, — напрямую.
+          if (_onlyListed(o)) {'type': 'field', 'network': 'tcp,udp', 'outboundTag': 'direct'},
         ],
       },
     };
+  }
+
+  static bool _onlyListed(XrayOptions o) =>
+      o.siteSplit == SplitMode.onlyListed && !SiteRules.parse(o.splitSites).isEmpty;
+
+  static List<Map<String, dynamic>> _splitRules(XrayOptions o) {
+    if (o.siteSplit == SplitMode.off) return const [];
+    final rules = SiteRules.parse(o.splitSites);
+    final out = o.siteSplit == SplitMode.onlyListed ? 'proxy' : 'direct';
+    return [
+      if (rules.domains.isNotEmpty) {'type': 'field', 'domain': rules.domains, 'outboundTag': out},
+      if (rules.ips.isNotEmpty) {'type': 'field', 'ip': rules.ips, 'outboundTag': out},
+    ];
   }
 
   static String buildJson(ProxyProfile p, [XrayOptions o = const XrayOptions()]) =>

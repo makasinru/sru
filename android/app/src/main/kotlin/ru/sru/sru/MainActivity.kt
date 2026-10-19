@@ -52,6 +52,11 @@ class MainActivity : FlutterActivity() {
                     .setAction(SruVpnService.ACTION_START)
                     .putExtra(SruVpnService.EXTRA_CONFIG, config)
                     .putExtra(SruVpnService.EXTRA_NAME, call.argument<String>("name") ?: "SruNaZapret")
+                    .putExtra(SruVpnService.EXTRA_APP_MODE, call.argument<String>("appMode") ?: "off")
+                    .putStringArrayListExtra(
+                        SruVpnService.EXTRA_APPS,
+                        ArrayList(call.argument<List<String>>("apps") ?: emptyList()),
+                    )
                 val consent = VpnService.prepare(this)
                 if (consent == null) {
                     launch(intent, result)
@@ -69,6 +74,10 @@ class MainActivity : FlutterActivity() {
                 result.success(null)
             }
             "status" -> result.success(VpnStatusBus.current)
+            "installedApps" -> Thread {
+                val apps = installedApps()
+                runOnUiThread { result.success(apps) }
+            }.start()
             "coreVersion" -> Thread {
                 val version = try {
                     val p = ProcessBuilder(SruVpnService.coreBinary(this).path, "version").start()
@@ -81,6 +90,19 @@ class MainActivity : FlutterActivity() {
             }.start()
             else -> result.notImplemented()
         }
+    }
+
+    /** Приложения с иконкой в лаунчере — для экрана раздельного туннелирования. */
+    private fun installedApps(): List<Map<String, String>> {
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        @Suppress("DEPRECATION")
+        val activities = packageManager.queryIntentActivities(launcher, 0)
+        return activities
+            .map { it.activityInfo.packageName to it.loadLabel(packageManager).toString() }
+            .filter { it.first != packageName }
+            .distinctBy { it.first }
+            .sortedBy { it.second.lowercase() }
+            .map { mapOf("package" to it.first, "label" to it.second) }
     }
 
     /** Ответ на start() приходит, когда ядро подключилось или упало. */

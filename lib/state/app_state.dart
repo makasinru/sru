@@ -12,7 +12,9 @@ import '../core/links/subscription.dart';
 import '../core/models/proxy_profile.dart';
 import '../core/server/remote_shell.dart';
 import '../core/server/xui_installer.dart';
+import '../core/vpn/connectivity_check.dart';
 import '../core/vpn/vpn_engine.dart';
+import '../core/xray/split_tunnel.dart';
 import '../core/xray/xray_config_builder.dart';
 import 'server_entry.dart';
 
@@ -40,6 +42,24 @@ class AppState extends ChangeNotifier {
 
   /// Windows: включать системный прокси при подключении.
   bool systemProxy = true;
+
+  /// Раздельное туннелирование (продвинутый режим), как в Amnezia.
+  SplitMode siteSplit = SplitMode.off;
+  List<String> splitSites = [];
+  SplitMode appSplit = SplitMode.off;
+  List<String> splitApps = [];
+
+  /// Результат последней проверки (Telegram, YouTube, Microsoft).
+  List<CheckResult> checks = [];
+  bool checking = false;
+  String? autoStatus;
+
+  /// Идёт подключение с перебором и проверкой протоколов.
+  bool busy = false;
+
+  /// Пароль локальных прокси-входов на Android — новый на каждое подключение.
+  String? _proxyUser;
+  String? _proxyPassword;
   List<ServerEntry> servers = [];
   String? selectedServerId;
   VpnStatus status = VpnStatus.disconnected;
@@ -62,6 +82,10 @@ class AppState extends ChangeNotifier {
     routing = RoutingPreset.values.byName(prefs.getString('routing') ?? RoutingPreset.bypassRu.name);
     blockAds = prefs.getBool('blockAds') ?? false;
     systemProxy = prefs.getBool('systemProxy') ?? true;
+    siteSplit = SplitMode.values.byName(prefs.getString('siteSplit') ?? SplitMode.off.name);
+    splitSites = prefs.getStringList('splitSites') ?? [];
+    appSplit = SplitMode.values.byName(prefs.getString('appSplit') ?? SplitMode.off.name);
+    splitApps = prefs.getStringList('splitApps') ?? [];
     _applyEngineSettings();
     selectedServerId = prefs.getString('selectedServer');
     final raw = prefs.getString('servers');
@@ -94,6 +118,10 @@ class AppState extends ChangeNotifier {
     await prefs.setString('routing', routing.name);
     await prefs.setBool('blockAds', blockAds);
     await prefs.setBool('systemProxy', systemProxy);
+    await prefs.setString('siteSplit', siteSplit.name);
+    await prefs.setStringList('splitSites', splitSites);
+    await prefs.setString('appSplit', appSplit.name);
+    await prefs.setStringList('splitApps', splitApps);
     if (selectedServerId != null) await prefs.setString('selectedServer', selectedServerId!);
     await prefs.setString('servers', jsonEncode(servers.map((s) => s.toJson()).toList()));
   }
@@ -133,6 +161,33 @@ class AppState extends ChangeNotifier {
     _changed();
   }
 
+  void setSiteSplit(SplitMode m) {
+    siteSplit = m;
+    _changed();
+  }
+
+  void addSplitSites(Iterable<String> entries) {
+    for (final e in entries.map((e) => e.trim()).where((e) => e.isNotEmpty)) {
+      if (!splitSites.contains(e)) splitSites.add(e);
+    }
+    _changed();
+  }
+
+  void removeSplitSite(String e) {
+    splitSites.remove(e);
+    _changed();
+  }
+
+  void setAppSplit(SplitMode m) {
+    appSplit = m;
+    _changed();
+  }
+
+  void toggleSplitApp(String pkg, bool on) {
+    on ? (splitApps.contains(pkg) ? null : splitApps.add(pkg)) : splitApps.remove(pkg);
+    _changed();
+  }
+
   void setSystemProxy(bool v) {
     systemProxy = v;
     _applyEngineSettings();
@@ -146,6 +201,7 @@ class AppState extends ChangeNotifier {
 
   /// Перед закрытием приложения: отключить VPN и вернуть настройки прокси.
   Future<void> shutdown() async {
+    if (busy) return;
     if (status == VpnStatus.connected || status == VpnStatus.connecting) {
       await engine.stop();
     }
@@ -245,33 +301,133 @@ class AppState extends ChangeNotifier {
 
   // ---------- подключение ----------
 
-  XrayOptions get xrayOptions =>
-      XrayOptions(tun: Platform.isAndroid || Platform.isIOS, routing: routing, blockAds: blockAds);
+  bool get _mobile => Platform.isAndroid || Platform.isIOS;
 
-  /// Порядок перебора: выбранный профиль или все по очереди («Автоматически»).
+  XrayOptions get xrayOptions => XrayOptions(
+    tun: _mobile,
+    routing: routing,
+    blockAds: blockAds,
+    // Раздельное туннелирование работает только в продвинутом режиме.
+    siteSplit: advanced ? siteSplit : SplitMode.off,
+    splitSites: splitSites,
+    proxyUser: _proxyUser,
+    proxyPassword: _proxyPassword,
+  );
+
+  /// Для тестов: подменить проверку подключения.
+  ConnectivityChecker Function(XrayOptions o)? checkerFactory;
+
+  ConnectivityChecker get _checker =>
+      checkerFactory?.call(xrayOptions) ??
+      ConnectivityChecker(proxyPort: xrayOptions.httpPort, proxyUser: _proxyUser, proxyPassword: _proxyPassword);
+
+  /// Порядок перебора: выбранный профиль или все по очереди («Автоматически»),
+  /// начиная с того, что в прошлый раз оказался самым быстрым.
   List<ProxyProfile> candidates(ServerEntry s) {
     if (s.selectedProfile != null && s.selectedProfile! < s.profiles.length) {
       return [s.profiles[s.selectedProfile!]];
     }
-    return s.profiles;
+    final list = [...s.profiles];
+    final last = s.lastGoodProfile;
+    if (last != null && last < list.length) list.insert(0, list.removeAt(last));
+    return list;
+  }
+
+  /// Задержка, при которой «Автоматически» сразу останавливается на протоколе.
+  static const fastEnoughMs = 350;
+
+  Future<bool> _startProfile(ServerEntry s, ProxyProfile p) async {
+    activeProfile = p;
+    notifyListeners();
+    await engine.start(
+      XrayConfigBuilder.buildJson(p, xrayOptions),
+      sessionName: s.name,
+      appSplit: advanced ? appSplit : SplitMode.off,
+      apps: splitApps,
+    );
+    return engine.current == VpnStatus.connected;
   }
 
   Future<void> toggle() async {
     if (status == VpnStatus.connected || status == VpnStatus.connecting) {
       await engine.stop();
       activeProfile = null;
+      checks = [];
+      autoStatus = null;
       notifyListeners();
       return;
     }
     final s = selectedServer;
     if (s == null) return;
-    for (final p in candidates(s)) {
-      activeProfile = p;
-      notifyListeners();
-      await engine.start(XrayConfigBuilder.buildJson(p, xrayOptions), sessionName: s.name);
-      if (engine.current == VpnStatus.connected) return;
+    if (_mobile) {
+      _proxyUser = 'sru';
+      _proxyPassword = const Uuid().v4();
     }
-    activeProfile = null;
+    checks = [];
+    busy = true;
+    try {
+      await _connect(s);
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+    if (engine.current == VpnStatus.connected) unawaited(runChecks());
+  }
+
+  Future<void> _connect(ServerEntry s) async {
+    final list = candidates(s);
+    final auto = list.length > 1;
+
+    // Перебор: ядро запустилось ещё не значит, что протокол не режется.
+    // Проверяем реальную загрузку Telegram и YouTube и выбираем самый быстрый.
+    ProxyProfile? best;
+    int? bestMs;
+    for (final p in list) {
+      if (auto) {
+        autoStatus = 'Пробуем ${p.protocol.title}…';
+        notifyListeners();
+      }
+      if (!await _startProfile(s, p)) continue;
+      final quick = await _checker.checkAll(
+        sites: ConnectivityChecker.targets.take(2).toList(),
+        timeout: const Duration(seconds: 6),
+      );
+      final ms = ConnectivityChecker.bestMs(quick);
+      if (!auto) {
+        checks = quick;
+        break;
+      }
+      if (ms == null) continue; // протокол заблокирован — дальше
+      if (bestMs == null || ms < bestMs) {
+        best = p;
+        bestMs = ms;
+        checks = quick;
+      }
+      if (ms <= fastEnoughMs) break;
+    }
+
+    if (auto) {
+      if (best == null) {
+        await engine.stop();
+        activeProfile = null;
+        autoStatus = 'Ни один протокол не открыл сайты. Возможно, сервер недоступен.';
+        notifyListeners();
+        return;
+      }
+      if (activeProfile != best) await _startProfile(s, best);
+      s.lastGoodProfile = s.profiles.indexOf(best);
+      unawaited(_save());
+    }
+    autoStatus = null;
+  }
+
+  /// Полная проверка для экрана: Telegram, YouTube, Microsoft.
+  Future<void> runChecks() async {
+    if (status != VpnStatus.connected || checking) return;
+    checking = true;
+    notifyListeners();
+    checks = await _checker.checkAll();
+    checking = false;
     notifyListeners();
   }
 
