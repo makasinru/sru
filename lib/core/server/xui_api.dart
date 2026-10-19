@@ -21,7 +21,9 @@ class XuiApi {
 
   Uri _u(String path) {
     final base = baseUrl.path.endsWith('/') ? baseUrl.path : '${baseUrl.path}/';
-    return baseUrl.replace(path: '${base}panel/api/$path');
+    final q = path.indexOf('?');
+    if (q < 0) return baseUrl.replace(path: '${base}panel/api/$path');
+    return baseUrl.replace(path: '${base}panel/api/${path.substring(0, q)}', query: path.substring(q + 1));
   }
 
   Map<String, String> get _headers => {
@@ -75,6 +77,33 @@ class XuiApi {
   }
 
   Future<Map<String, dynamic>> settings() async => (await post('setting/all') as Map<String, dynamic>?) ?? {};
+
+  // ---------- клиенты (пользователи) ----------
+
+  /// Все клиенты панели с привязанными inbound'ами и трафиком.
+  Future<List<Map<String, dynamic>>> listClients() async {
+    final obj = await get('clients/list');
+    return (obj as List? ?? []).cast<Map<String, dynamic>>();
+  }
+
+  /// Создаёт клиента сразу на нескольких inbound'ах. Ключи (UUID, пароли)
+  /// панель генерирует сама; flow Vision она убирает там, где он невозможен.
+  Future<void> addClient(Map<String, dynamic> client, List<int> inboundIds) =>
+      post('clients/add', {'client': client, 'inboundIds': inboundIds});
+
+  /// Панель заменяет запись целиком — передавайте все поля клиента.
+  Future<void> updateClient(String email, Map<String, dynamic> client) =>
+      post('clients/update/${Uri.encodeComponent(email)}', client);
+
+  Future<void> deleteClient(String email) => post('clients/del/${Uri.encodeComponent(email)}?keepTraffic=0');
+
+  Future<void> resetClientTraffic(String email) => post('clients/resetTraffic/${Uri.encodeComponent(email)}');
+
+  /// Email'ы клиентов, которые сейчас подключены.
+  Future<Set<String>> onlineClients() async {
+    final obj = await post('clients/onlines');
+    return {...(obj as List? ?? []).cast<String>()};
+  }
 
   void close() => _client.close();
 }

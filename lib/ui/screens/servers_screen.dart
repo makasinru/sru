@@ -10,6 +10,7 @@ import '../../state/app_state.dart';
 import '../../state/server_entry.dart';
 import '../theme.dart';
 import '../widgets/share_qr_dialog.dart';
+import 'server_users_screen.dart';
 import 'add_server_screen.dart';
 
 /// Продвинутый режим: серверы, протоколы с пингом, конфиги, доступ к панели.
@@ -129,6 +130,13 @@ class _ServerDetailsScreenState extends State<ServerDetailsScreen> {
             ),
           ),
           if (s.panel != null && s.ssh != null) ...[
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              icon: const Icon(Icons.people_outline),
+              label: const Text('Пользователи и трафик'),
+              onPressed: () =>
+                  Navigator.push(context, MaterialPageRoute<void>(builder: (_) => ServerUsersScreen(server: s))),
+            ),
             const _Header('Панель 3x-ui'),
             Card(
               child: Padding(
