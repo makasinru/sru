@@ -30,11 +30,26 @@ class MainActivity : FlutterActivity() {
     }
 
     private var pendingIntent: Intent? = null
+    private var links: MethodChannel? = null
+
+    /** Ссылка, с которой открыли приложение; отдаётся Flutter один раз. */
+    private var initialLink: String? = null
     private var pendingResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
+        initialLink = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.dataString
+        links = MethodChannel(messenger, "ru.sru/links").apply {
+            setMethodCallHandler { call, result ->
+                if (call.method == "initial") {
+                    result.success(initialLink)
+                    initialLink = null
+                } else {
+                    result.notImplemented()
+                }
+            }
+        }
         MethodChannel(messenger, "ru.sru/vpn").setMethodCallHandler(::onMethodCall)
         EventChannel(messenger, "ru.sru/vpn/status").setStreamHandler(object : EventChannel.StreamHandler {
             private var listener: ((String) -> Unit)? = null
@@ -150,6 +165,12 @@ class MainActivity : FlutterActivity() {
             if (error == null) result.success(null) else result.error("VPN", error, null)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
+    }
+
+    /** Приложение уже открыто, а пользователь нажал ещё одну ссылку. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == Intent.ACTION_VIEW) intent.dataString?.let { links?.invokeMethod("link", it) }
     }
 
     @Deprecated("startActivityForResult нужен для VpnService.prepare")

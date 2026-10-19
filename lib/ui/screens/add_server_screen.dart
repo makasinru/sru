@@ -1,10 +1,16 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/links/deep_link.dart';
+import '../../core/links/qr_image.dart';
 import '../../state/app_state.dart';
 import '../theme.dart';
 import 'own_server_screen.dart';
+import 'qr_scan_screen.dart';
 
 /// Аналог PageSetupWizardStart / PageSetupWizardConfigSource в Amnezia:
 /// «у меня есть ключ» или «настроить свой сервер».
@@ -50,6 +56,21 @@ class AddServerScreen extends StatelessWidget {
               onTap: () => _fromClipboard(context),
             ),
             const SizedBox(height: 12),
+            if (Platform.isAndroid || Platform.isIOS)
+              _Option(
+                icon: Icons.qr_code_scanner,
+                title: 'Сканировать QR-код',
+                subtitle: 'Камерой — с экрана другого устройства или из панели сервера',
+                onTap: () => _scanQr(context),
+              )
+            else
+              _Option(
+                icon: Icons.qr_code,
+                title: 'QR-код из картинки',
+                subtitle: 'Скриншот или фото QR-кода с ключом',
+                onTap: () => _qrFromImage(context),
+              ),
+            const SizedBox(height: 12),
             _Option(
               icon: Icons.dns,
               title: 'Настроить свой сервер',
@@ -60,6 +81,28 @@ class AddServerScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _scanQr(BuildContext context) async {
+    final value = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => const QrScanScreen()));
+    if (value == null || !context.mounted) return;
+    await _import(context, DeepLink.payload(value) ?? value);
+  }
+
+  Future<void> _qrFromImage(BuildContext context) async {
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Картинки', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif']),
+      ],
+    );
+    if (file == null || !context.mounted) return;
+    final value = QrImage.decode(await file.readAsBytes());
+    if (!context.mounted) return;
+    if (value == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('QR-код на картинке не найден')));
+      return;
+    }
+    await _import(context, DeepLink.payload(value) ?? value);
   }
 
   Future<void> _fromClipboard(BuildContext context) async {

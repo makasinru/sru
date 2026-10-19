@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'core/platform/windows_integration.dart';
 import 'core/vpn/windows_proxy.dart';
 import 'state/app_state.dart';
+import 'state/link_handler.dart';
 import 'ui/screens/root_screen.dart';
 import 'ui/theme.dart';
 
@@ -19,8 +22,17 @@ Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   final state = AppState();
   await state.load();
+  if (Platform.isWindows) {
+    try {
+      WindowsIntegration.registerUrlProtocol();
+    } catch (_) {}
+  }
   runApp(ChangeNotifierProvider.value(value: state, child: const SruApp()));
+  unawaited(LinkHandler(state, messengerKey).init(args));
 }
+
+/// Для сообщений вне экранов (диплинки).
+final messengerKey = GlobalKey<ScaffoldMessengerState>();
 
 class SruApp extends StatefulWidget {
   const SruApp({super.key});
@@ -54,6 +66,7 @@ class _SruAppState extends State<SruApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'SruNaZapret',
+      scaffoldMessengerKey: messengerKey,
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       home: const RootScreen(),

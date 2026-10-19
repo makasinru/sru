@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/links/deep_link.dart';
 import '../../core/links/subscription.dart';
 import '../../core/models/proxy_profile.dart';
 import '../../core/xray/xray_config_builder.dart';
 import '../../state/app_state.dart';
 import '../../state/server_entry.dart';
 import '../theme.dart';
+import '../widgets/share_qr_dialog.dart';
 import 'add_server_screen.dart';
 
 /// Продвинутый режим: серверы, протоколы с пингом, конфиги, доступ к панели.
@@ -116,6 +118,16 @@ class _ServerDetailsScreenState extends State<ServerDetailsScreen> {
               );
             },
           ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.qr_code),
+            label: const Text('Поделиться через QR-код'),
+            onPressed: () => showShareQr(
+              context,
+              title: s.name,
+              data: s.profiles.length == 1 ? s.profiles.first.raw : DeepLink.importLink(s.profiles.map((p) => p.raw)),
+            ),
+          ),
           if (s.panel != null && s.ssh != null) ...[
             const _Header('Панель 3x-ui'),
             Card(
@@ -209,7 +221,17 @@ class _ProfileTile extends StatelessWidget {
         ),
         title: Text('${profile.protocol.title} · ${profile.transportLabel}'),
         subtitle: Text('${profile.host}:${profile.port}${pingText.isEmpty ? '' : ' · $pingText'}'),
-        trailing: IconButton(icon: const Icon(Icons.code), tooltip: 'Конфиг', onPressed: onShowConfig),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.qr_code),
+              tooltip: 'QR-код ключа',
+              onPressed: () => showShareQr(context, title: profile.name, data: profile.raw),
+            ),
+            IconButton(icon: const Icon(Icons.code), tooltip: 'Конфиг', onPressed: onShowConfig),
+          ],
+        ),
       ),
     );
   }
