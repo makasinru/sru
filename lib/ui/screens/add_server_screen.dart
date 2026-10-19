@@ -22,7 +22,7 @@ class AddServerScreen extends StatelessWidget {
           children: [
             if (isOnboarding) const SizedBox(height: 48),
             Text(
-              isOnboarding ? 'SRU VPN' : 'Новое подключение',
+              isOnboarding ? 'SruNaZapret' : 'Новое подключение',
               style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),

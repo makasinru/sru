@@ -4,7 +4,7 @@ project(runner LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "sru")
+set(BINARY_NAME "SruNaZapret")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
 set(APPLICATION_ID "ru.sru.sru")
@@ -125,4 +125,15 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
+endif()
+
+# Ядро SruNaZapret (sru-core) и geo-базы: собираются core/build_desktop.sh linux.
+set(SRU_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build/core/linux")
+if(EXISTS "${SRU_CORE_DIR}/sru-core")
+  install(PROGRAMS "${SRU_CORE_DIR}/sru-core" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+    COMPONENT Runtime)
+  install(DIRECTORY "${SRU_CORE_DIR}/geo" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+    COMPONENT Runtime)
+else()
+  message(WARNING "sru-core не собран: запустите core/build_desktop.sh linux")
 endif()

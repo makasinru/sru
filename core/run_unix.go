@@ -1,19 +1,8 @@
-// sru-core — ядро VPN для Android: Xray-core в отдельном процессе.
-//
-// Собирается чистым Go (CGO_ENABLED=0), поэтому не нужен Android NDK.
-// Кладётся в jniLibs как libsrucore.so — Android распаковывает его в
-// nativeLibraryDir, откуда разрешено запускать исполняемые файлы.
-//
-// Протокол с приложением (SruVpnService.kt):
-//
-//	libsrucore.so run <socket> <config.json> <assetDir> [dns1,dns2]
-//
-// Ядро слушает unix-сокет <socket>. Приложение подключается и шлёт строку
-// "start\n" вместе с TUN-дескриптором (SCM_RIGHTS). Ядро отвечает "ok\n" или
-// "error:<текст>\n". Закрытие соединения = остановка ядра и выход процесса.
-// Дескриптор нельзя унаследовать при запуске процесса из Java (ProcessBuilder
-// закрывает все fd, кроме 0–2), поэтому он передаётся через сокет.
+//go:build !windows
+
 package main
+
+// Режим run (Android): TUN-дескриптор приходит по unix-сокету (SCM_RIGHTS).
 
 import (
 	"bufio"
@@ -29,38 +18,8 @@ import (
 	"time"
 
 	"github.com/xtls/xray-core/core"
-	_ "github.com/xtls/xray-core/main/distro/all"
 	"golang.org/x/sys/unix"
 )
-
-func main() {
-	if len(os.Args) >= 2 && os.Args[1] == "version" {
-		fmt.Println("Xray " + core.Version())
-		return
-	}
-	if len(os.Args) < 5 || os.Args[1] != "run" {
-		fmt.Fprintln(os.Stderr, "usage: sru-core run <socket> <config.json> <assetDir> [dns1,dns2]")
-		os.Exit(2)
-	}
-	var dns []string
-	if len(os.Args) > 5 {
-		dns = splitList(os.Args[5])
-	}
-	if err := serve(os.Args[2], os.Args[3], os.Args[4], dns); err != nil {
-		fmt.Fprintln(os.Stderr, "sru-core:", err)
-		os.Exit(1)
-	}
-}
-
-func splitList(s string) []string {
-	var out []string
-	for _, v := range strings.Split(s, ",") {
-		if v = strings.TrimSpace(v); v != "" {
-			out = append(out, v)
-		}
-	}
-	return out
-}
 
 // useResolvers направляет системный резолвер Go на DNS-серверы сети.
 // В Android нет /etc/resolv.conf, и без этого чистый Go ходит в 127.0.0.1:53.

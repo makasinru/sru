@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * VPN-сервис: поднимает TUN через [VpnService.Builder] и запускает ядро
- * (Xray-core, файл libsrucore.so из android/core) отдельным процессом.
+ * (Xray-core, файл libsrucore.so из core/) отдельным процессом.
  *
  * TUN-дескриптор передаётся ядру через unix-сокет (SCM_RIGHTS), потому что
  * процессы, запущенные из Java, не наследуют файловые дескрипторы.
@@ -61,7 +61,7 @@ class SruVpnService : VpnService() {
         when (intent?.action) {
             ACTION_START -> {
                 val config = intent.getStringExtra(EXTRA_CONFIG)
-                val name = intent.getStringExtra(EXTRA_NAME) ?: "SRU VPN"
+                val name = intent.getStringExtra(EXTRA_NAME) ?: "SruNaZapret"
                 if (config == null) {
                     VpnStatusBus.post(VpnStatusBus.ERROR, "Нет конфигурации")
                     return START_NOT_STICKY

@@ -5,7 +5,7 @@ import android.os.Build
 import java.io.File
 
 /**
- * geoip.dat / geosite.dat лежат в assets APK (их кладёт android/core/build.sh)
+ * geoip.dat / geosite.dat лежат в assets APK (их кладёт core/build.sh)
  * и копируются в файлы приложения при первом запуске и после обновления —
  * Xray читает их по пути из XRAY_LOCATION_ASSET.
  */

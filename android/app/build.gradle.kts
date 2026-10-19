@@ -29,7 +29,7 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // Ядро собирается только под arm64 (см. android/core/build.sh).
+        // Ядро собирается только под arm64 (см. core/build.sh).
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -77,7 +77,7 @@ flutter {
 
 // Ядро Xray (Go) и geo-базы собираются перед сборкой APK, если изменились исходники.
 val buildCore by tasks.registering(Exec::class) {
-    val core = rootProject.file("core")
+    val core = rootProject.file("../core")
     inputs.files(fileTree(core) { include("*.go", "go.mod", "go.sum", "build.sh") })
     outputs.file("src/main/jniLibs/arm64-v8a/libsrucore.so")
     outputs.files("src/main/assets/geo/geoip.dat", "src/main/assets/geo/geosite.dat")

@@ -7,7 +7,7 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
-app="$here/../app/src/main"
+app="$here/../android/app/src/main"
 jni="$app/jniLibs/arm64-v8a"
 geo="$app/assets/geo"
 mkdir -p "$jni" "$geo"
@@ -19,16 +19,5 @@ echo "sru-core: сборка arm64-v8a"
     -ldflags='-s -w -buildid= -checklinkname=0' -o "$jni/libsrucore.so" .
 )
 
-# geoip:ru, geosite:category-ru, category-ads-all и др. — правила маршрутизации.
-geo_url="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
-for f in geoip.dat geosite.dat; do
-  if [[ ! -s "$geo/$f" || "${SRU_REFRESH_GEO:-0}" == "1" ]]; then
-    echo "sru-core: загрузка $f"
-    curl -fsSL "$geo_url/$f" -o "$geo/$f.tmp"
-    curl -fsSL "$geo_url/$f.sha256sum" -o "$geo/$f.sha256sum"
-    (cd "$geo" && sed "s/ $f\$/ $f.tmp/" "$f.sha256sum" | sha256sum -c --quiet)
-    mv "$geo/$f.tmp" "$geo/$f"
-    rm -f "$geo/$f.sha256sum"
-  fi
-done
+"$here/fetch_geo.sh" "$geo"
 echo "sru-core: готово"

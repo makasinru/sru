@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "ru.sru" "\0"
-            VALUE "FileDescription", "sru" "\0"
+            VALUE "FileDescription", "SruNaZapret" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "sru" "\0"
+            VALUE "InternalName", "SruNaZapret" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 ru.sru. All rights reserved." "\0"
-            VALUE "OriginalFilename", "sru.exe" "\0"
-            VALUE "ProductName", "sru" "\0"
+            VALUE "OriginalFilename", "SruNaZapret.exe" "\0"
+            VALUE "ProductName", "SruNaZapret" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

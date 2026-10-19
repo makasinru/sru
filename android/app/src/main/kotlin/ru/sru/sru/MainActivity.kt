@@ -51,7 +51,7 @@ class MainActivity : FlutterActivity() {
                 val intent = Intent(this, SruVpnService::class.java)
                     .setAction(SruVpnService.ACTION_START)
                     .putExtra(SruVpnService.EXTRA_CONFIG, config)
-                    .putExtra(SruVpnService.EXTRA_NAME, call.argument<String>("name") ?: "SRU VPN")
+                    .putExtra(SruVpnService.EXTRA_NAME, call.argument<String>("name") ?: "SruNaZapret")
                 val consent = VpnService.prepare(this)
                 if (consent == null) {
                     launch(intent, result)

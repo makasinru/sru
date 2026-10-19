@@ -37,6 +37,9 @@ class AppState extends ChangeNotifier {
   UiMode mode = UiMode.simple;
   RoutingPreset routing = RoutingPreset.bypassRu;
   bool blockAds = false;
+
+  /// Windows: включать системный прокси при подключении.
+  bool systemProxy = true;
   List<ServerEntry> servers = [];
   String? selectedServerId;
   VpnStatus status = VpnStatus.disconnected;
@@ -58,6 +61,8 @@ class AppState extends ChangeNotifier {
     mode = UiMode.values.byName(prefs.getString('mode') ?? UiMode.simple.name);
     routing = RoutingPreset.values.byName(prefs.getString('routing') ?? RoutingPreset.bypassRu.name);
     blockAds = prefs.getBool('blockAds') ?? false;
+    systemProxy = prefs.getBool('systemProxy') ?? true;
+    _applyEngineSettings();
     selectedServerId = prefs.getString('selectedServer');
     final raw = prefs.getString('servers');
     if (raw != null) {
@@ -88,6 +93,7 @@ class AppState extends ChangeNotifier {
     await prefs.setString('mode', mode.name);
     await prefs.setString('routing', routing.name);
     await prefs.setBool('blockAds', blockAds);
+    await prefs.setBool('systemProxy', systemProxy);
     if (selectedServerId != null) await prefs.setString('selectedServer', selectedServerId!);
     await prefs.setString('servers', jsonEncode(servers.map((s) => s.toJson()).toList()));
   }
@@ -125,6 +131,24 @@ class AppState extends ChangeNotifier {
   void setBlockAds(bool v) {
     blockAds = v;
     _changed();
+  }
+
+  void setSystemProxy(bool v) {
+    systemProxy = v;
+    _applyEngineSettings();
+    _changed();
+  }
+
+  void _applyEngineSettings() {
+    final e = engine;
+    if (e is DesktopXrayEngine) e.useSystemProxy = systemProxy;
+  }
+
+  /// Перед закрытием приложения: отключить VPN и вернуть настройки прокси.
+  Future<void> shutdown() async {
+    if (status == VpnStatus.connected || status == VpnStatus.connecting) {
+      await engine.stop();
+    }
   }
 
   void selectServer(String id) {

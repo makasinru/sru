@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -45,6 +47,20 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
         ),
+        if (Platform.isWindows) ...[
+          const SizedBox(height: 16),
+          Card(
+            child: SwitchListTile(
+              value: state.systemProxy,
+              onChanged: state.setSystemProxy,
+              title: const Text('Системный прокси Windows'),
+              subtitle: const Text(
+                'Браузеры и большинство программ пойдут через VPN. Если выключить — '
+                'укажите в программе вручную SOCKS 127.0.0.1:10808 или HTTP 127.0.0.1:10809',
+              ),
+            ),
+          ),
+        ],
         if (state.advanced) ...[
           const SizedBox(height: 16),
           Card(
@@ -65,7 +81,7 @@ class SettingsScreen extends StatelessWidget {
         ],
         const SizedBox(height: 24),
         const Center(
-          child: Text('SRU VPN 0.1.0', style: TextStyle(color: SruColors.textTertiary)),
+          child: Text('SruNaZapret 0.1.0', style: TextStyle(color: SruColors.textTertiary)),
         ),
       ],
     );

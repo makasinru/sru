@@ -13,6 +13,6 @@ key.properties
 **/*.keystore
 **/*.jks
 
-# Собираются android/core/build.sh
+# Собираются core/build.sh
 /app/src/main/jniLibs/
 /app/src/main/assets/geo/
