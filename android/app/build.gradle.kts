@@ -29,9 +29,9 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // Ядро собирается только под arm64 (см. core/build.sh).
+        // Ядро: arm64 всегда, armv7 — если при сборке есть NDK (см. core/build.sh).
         ndk {
-            abiFilters += listOf("arm64-v8a")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
     }
 
@@ -79,7 +79,7 @@ flutter {
 val buildCore by tasks.registering(Exec::class) {
     val core = rootProject.file("../core")
     inputs.files(fileTree(core) { include("*.go", "go.mod", "go.sum", "build.sh") })
-    outputs.file("src/main/jniLibs/arm64-v8a/libsrucore.so")
+    outputs.dir("src/main/jniLibs")
     outputs.files("src/main/assets/geo/geoip.dat", "src/main/assets/geo/geosite.dat")
     commandLine("bash", core.resolve("build.sh").path)
 }

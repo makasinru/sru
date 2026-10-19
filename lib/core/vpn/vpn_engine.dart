@@ -10,9 +10,12 @@ import 'windows_proxy.dart';
 enum VpnStatus { disconnected, connecting, connected, disconnecting, error }
 
 class InstalledApp {
-  InstalledApp(this.packageName, this.label);
+  InstalledApp(this.packageName, this.label, [this.icon]);
   final String packageName;
   final String label;
+
+  /// PNG 96×96.
+  final Uint8List? icon;
 }
 
 /// Абстракция над ядром. На Android/iOS это нативный VpnService/NetworkExtension
@@ -125,7 +128,9 @@ class MethodChannelVpnEngine extends _BaseEngine {
   Future<List<InstalledApp>> installedApps() async {
     try {
       final list = await _method.invokeListMethod<Map<Object?, Object?>>('installedApps') ?? [];
-      return [for (final m in list) InstalledApp(m['package'] as String, m['label'] as String)];
+      return [
+        for (final m in list) InstalledApp(m['package'] as String, m['label'] as String, m['icon'] as Uint8List?),
+      ];
     } on MissingPluginException {
       return const [];
     }

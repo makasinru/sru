@@ -129,6 +129,7 @@ class SruVpnService : VpnService() {
             }.apply { isDaemon = true }.start()
 
             updateNotification(name)
+            LastSession(config, name, split.mode, split.packages).save(this)
             VpnStatusBus.post(VpnStatusBus.CONNECTED)
         } catch (e: Exception) {
             Log.e(TAG, "start failed", e)

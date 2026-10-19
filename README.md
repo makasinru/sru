@@ -76,7 +76,7 @@ XUI_TEST_URL=http://127.0.0.1:<порт>/<путь> XUI_TEST_TOKEN=<apiToken> XR
 * `MainActivity.kt` — канал `ru.sru/vpn` для Flutter: запрос разрешения на VPN, `start`/`stop`/`coreVersion` и поток статусов.
 * `vpn/CoreAssets.kt` — копирует geoip/geosite из APK для правил «кроме РФ» и блокировки рекламы.
 
-Ядро — `core/`: Xray-core v26.10.10 с небольшой обёрткой на Go. Собирается без Android NDK (чистый Go, `CGO_ENABLED=0`) и попадает в APK как `libsrucore.so`. Gradle сам вызывает `core/build.sh` перед сборкой, нужен только Go 1.27+. Поддерживается только **arm64-v8a**: для armv7/x86 Go требует cgo и NDK.
+Ядро — `core/`: Xray-core v26.10.10 с небольшой обёрткой на Go. Собирается без Android NDK (чистый Go, `CGO_ENABLED=0`) и попадает в APK как `libsrucore.so`. Gradle сам вызывает `core/build.sh` перед сборкой, нужен только Go 1.27+. Поддерживаются **arm64-v8a** (без NDK) и **armeabi-v7a** (Go для android/arm требует cgo, поэтому нужен Android NDK — в CI он есть).
 
 ```bash
 flutter build apk --release --target-platform android-arm64
@@ -103,7 +103,7 @@ flutter build windows --release      # CMake кладёт их рядом с Sru
 
 GitHub Actions (`.github/workflows/build.yml`) на каждый push собирает:
 
-* `SruNaZapret-android-arm64.apk`;
+* `SruNaZapret-android.apk` (arm64 и armv7);
 * `SruNaZapret-Setup-<версия>.exe` — установщик для Windows 10/11, ставится без прав администратора;
 * `SruNaZapret-windows-x64-portable.zip` — версия без установки.
 

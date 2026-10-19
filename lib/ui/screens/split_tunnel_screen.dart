@@ -190,6 +190,9 @@ class _AppsTabState extends State<_AppsTab> {
                 itemBuilder: (_, i) {
                   final a = apps[i];
                   return CheckboxListTile(
+                    secondary: a.icon == null
+                        ? const Icon(Icons.android)
+                        : Image.memory(a.icon!, width: 36, height: 36, gaplessPlayback: true),
                     value: state.splitApps.contains(a.packageName),
                     onChanged: (v) => state.toggleSplitApp(a.packageName, v ?? false),
                     title: Text(a.label),

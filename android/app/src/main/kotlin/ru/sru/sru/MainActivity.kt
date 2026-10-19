@@ -1,6 +1,11 @@
 package ru.sru.sru
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.net.VpnService
 import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
@@ -10,6 +15,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import ru.sru.sru.vpn.SruVpnService
 import ru.sru.sru.vpn.VpnStatusBus
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 
 /**
@@ -19,6 +25,8 @@ import java.util.concurrent.TimeUnit
 class MainActivity : FlutterActivity() {
     companion object {
         private const val REQUEST_VPN = 0x5652
+        private const val REQUEST_NOTIFICATIONS = 0x5653
+        private const val ICON_SIZE = 96
     }
 
     private var pendingIntent: Intent? = null
@@ -29,13 +37,16 @@ class MainActivity : FlutterActivity() {
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         MethodChannel(messenger, "ru.sru/vpn").setMethodCallHandler(::onMethodCall)
         EventChannel(messenger, "ru.sru/vpn/status").setStreamHandler(object : EventChannel.StreamHandler {
+            private var listener: ((String) -> Unit)? = null
+
             override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
-                VpnStatusBus.listener = { events.success(it) }
+                listener = { s: String -> events.success(s) }.also(VpnStatusBus::addListener)
                 events.success(VpnStatusBus.current)
             }
 
             override fun onCancel(arguments: Any?) {
-                VpnStatusBus.listener = null
+                listener?.let(VpnStatusBus::removeListener)
+                listener = null
             }
         })
     }
@@ -93,20 +104,48 @@ class MainActivity : FlutterActivity() {
     }
 
     /** Приложения с иконкой в лаунчере — для экрана раздельного туннелирования. */
-    private fun installedApps(): List<Map<String, String>> {
+    private fun installedApps(): List<Map<String, Any>> {
         val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         @Suppress("DEPRECATION")
         val activities = packageManager.queryIntentActivities(launcher, 0)
         return activities
-            .map { it.activityInfo.packageName to it.loadLabel(packageManager).toString() }
-            .filter { it.first != packageName }
-            .distinctBy { it.first }
+            .filter { it.activityInfo.packageName != packageName }
+            .distinctBy { it.activityInfo.packageName }
+            .map { Triple(it.activityInfo.packageName, it.loadLabel(packageManager).toString(), it) }
             .sortedBy { it.second.lowercase() }
-            .map { mapOf("package" to it.first, "label" to it.second) }
+            .map { (pkg, label, info) ->
+                mapOf("package" to pkg, "label" to label, "icon" to iconPng(info.loadIcon(packageManager)))
+            }
+    }
+
+    private fun iconPng(d: Drawable): ByteArray {
+        val bmp = Bitmap.createBitmap(ICON_SIZE, ICON_SIZE, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        d.setBounds(0, 0, ICON_SIZE, ICON_SIZE)
+        d.draw(canvas)
+        return ByteArrayOutputStream().use { out ->
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+            bmp.recycle()
+            out.toByteArray()
+        }
+    }
+
+    /**
+     * Android 13+: без разрешения уведомление VPN (с кнопкой «Отключить») скрыто.
+     * Спрашиваем один раз, при первом подключении; на работу VPN ответ не влияет.
+     */
+    private fun askNotificationsOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        val prefs = getSharedPreferences("sru", MODE_PRIVATE)
+        if (prefs.getBoolean("askedNotifications", false)) return
+        prefs.edit().putBoolean("askedNotifications", true).apply()
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
     }
 
     /** Ответ на start() приходит, когда ядро подключилось или упало. */
     private fun launch(intent: Intent, result: MethodChannel.Result) {
+        askNotificationsOnce()
         VpnStatusBus.pendingStart = { error ->
             if (error == null) result.success(null) else result.error("VPN", error, null)
         }

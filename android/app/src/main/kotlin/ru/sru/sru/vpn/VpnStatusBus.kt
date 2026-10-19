@@ -19,8 +19,12 @@ object VpnStatusBus {
     var current: String = DISCONNECTED
         private set
 
-    /** Событие для EventChannel: "connected" или "error:<текст>". */
-    var listener: ((String) -> Unit)? = null
+    /** Подписчики (EventChannel Flutter, плитка в шторке): "connected" или "error:<текст>". */
+    private val listeners = mutableSetOf<(String) -> Unit>()
+
+    fun addListener(l: (String) -> Unit) = main.post { listeners.add(l) }
+
+    fun removeListener(l: (String) -> Unit) = main.post { listeners.remove(l) }
 
     /** Ожидающий ответа вызов start() из Flutter: (ошибка или null). */
     var pendingStart: ((String?) -> Unit)? = null
@@ -28,7 +32,8 @@ object VpnStatusBus {
     fun post(status: String, error: String? = null) {
         current = status
         main.post {
-            listener?.invoke(if (status == ERROR) "error:${error ?: "неизвестная ошибка"}" else status)
+            val event = if (status == ERROR) "error:${error ?: "неизвестная ошибка"}" else status
+            listeners.toList().forEach { it(event) }
             when (status) {
                 CONNECTED -> pendingStart?.invoke(null).also { pendingStart = null }
                 ERROR, DISCONNECTED -> pendingStart?.invoke(error ?: "VPN отключён").also { pendingStart = null }
