@@ -56,8 +56,8 @@ class _ModeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return SegmentedButton<UiMode>(
       segments: const [
-        ButtonSegment(value: UiMode.simple, label: Text('Просто')),
-        ButtonSegment(value: UiMode.advanced, label: Text('Продвинуто')),
+        ButtonSegment(value: UiMode.simple, label: Text('Lite')),
+        ButtonSegment(value: UiMode.advanced, label: Text('Pro')),
       ],
       selected: {state.mode},
       showSelectedIcon: false,
@@ -145,13 +145,13 @@ class _StatusText extends StatelessWidget {
   }
 }
 
-/// Итоги автоподбора: самые быстрые варианты, выбранный отмечен звездой.
-/// Подписка может дать десятки стран и протоколов — показываем не больше [shown].
+/// Итоги автоподбора: три самых быстрых рабочих варианта (выбранный — со
+/// звездой), дальше только счёт: сколько ещё работает и сколько не работает.
 class _ProbeList extends StatelessWidget {
   const _ProbeList({required this.state});
   final AppState state;
 
-  static const shown = 6;
+  static const shown = 3;
 
   @override
   Widget build(BuildContext context) {
@@ -162,9 +162,8 @@ class _ProbeList extends StatelessWidget {
     String label(ProxyProfile p) => manyHosts && p.name.isNotEmpty ? p.name : p.displayName;
 
     final working = all.where((r) => r.$2 != null).toList()..sort((a, b) => a.$2!.compareTo(b.$2!));
-    final failed = all.where((r) => r.$2 == null).toList();
-    final list = [...working, ...failed].take(shown).toList();
-    final hidden = all.length - list.length;
+    final failed = all.length - working.length;
+    final moreWorking = working.length - shown;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Wrap(
@@ -172,34 +171,27 @@ class _ProbeList extends StatelessWidget {
         spacing: 6,
         runSpacing: 6,
         children: [
-          for (final (p, ms) in list)
-            Chip(
-              visualDensity: VisualDensity.compact,
-              avatar: Icon(
-                ms == null ? Icons.cancel : (identical(p, chosen) ? Icons.star : Icons.check_circle),
-                size: 16,
-                color: ms == null
-                    ? SruColors.destructive
-                    : (identical(p, chosen) ? SruColors.accent : SruColors.success),
-              ),
-              label: Text('${label(p)} · ${ms == null ? 'нет' : '$ms мс'}', style: const TextStyle(fontSize: 12)),
-              backgroundColor: SruColors.bgSurface,
-              side: BorderSide(color: identical(p, chosen) ? SruColors.accent : SruColors.border),
+          for (final (p, ms) in working.take(shown))
+            _chip(
+              identical(p, chosen) ? Icons.star : Icons.check_circle,
+              identical(p, chosen) ? SruColors.accent : SruColors.success,
+              '${label(p)} · $ms мс',
+              highlighted: identical(p, chosen),
             ),
-          if (hidden > 0)
-            Chip(
-              visualDensity: VisualDensity.compact,
-              label: Text(
-                'работает ${working.length} из ${all.length}',
-                style: const TextStyle(fontSize: 12, color: SruColors.textTertiary),
-              ),
-              backgroundColor: SruColors.bgSurface,
-              side: const BorderSide(color: SruColors.border),
-            ),
+          if (moreWorking > 0) _chip(Icons.add, SruColors.success, 'ещё $moreWorking работают'),
+          if (failed > 0) _chip(Icons.cancel, SruColors.destructive, 'не работает: $failed'),
         ],
       ),
     );
   }
+
+  Widget _chip(IconData icon, Color color, String text, {bool highlighted = false}) => Chip(
+    visualDensity: VisualDensity.compact,
+    avatar: Icon(icon, size: 16, color: color),
+    label: Text(text, style: const TextStyle(fontSize: 12)),
+    backgroundColor: SruColors.bgSurface,
+    side: BorderSide(color: highlighted ? SruColors.accent : SruColors.border),
+  );
 }
 
 /// Проверка «работает ли на самом деле»: Telegram, YouTube, задержка и скорость.

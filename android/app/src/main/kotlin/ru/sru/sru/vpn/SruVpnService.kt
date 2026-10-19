@@ -10,14 +10,18 @@ import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
+import android.net.TrafficStats
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.Process as AndroidProcess
 import android.util.Log
 import ru.sru.sru.MainActivity
 import java.io.File
 import java.io.IOException
+import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 /**
@@ -53,6 +57,8 @@ class SruVpnService : VpnService() {
     }
 
     private val worker = Executors.newSingleThreadExecutor()
+    private val ticker = Executors.newSingleThreadScheduledExecutor()
+    private var speedTask: ScheduledFuture<*>? = null
     private var tun: ParcelFileDescriptor? = null
     private var core: Process? = null
     private var control: LocalSocket? = null
@@ -91,6 +97,7 @@ class SruVpnService : VpnService() {
     override fun onDestroy() {
         stopInternal()
         worker.shutdownNow()
+        ticker.shutdownNow()
         super.onDestroy()
     }
 
@@ -131,6 +138,7 @@ class SruVpnService : VpnService() {
             }.apply { isDaemon = true }.start()
 
             updateNotification(name)
+            startSpeedMeter(name)
             LastSession(config, name, split.mode, split.packages, tunSpec?.json).save(this)
             VpnStatusBus.post(VpnStatusBus.CONNECTED)
         } catch (e: Exception) {
@@ -203,6 +211,8 @@ class SruVpnService : VpnService() {
 
     private fun stopInternal() {
         stopping = true
+        speedTask?.cancel(false)
+        speedTask = null
         try {
             control?.close() // ядро видит закрытие сокета и выходит само
         } catch (_: IOException) {
@@ -245,6 +255,8 @@ class SruVpnService : VpnService() {
             .setContentTitle(title)
             .setContentText(text)
             .setOngoing(true)
+            .setOnlyAlertOnce(true) // обновление скорости раз в секунду — без звука и всплытия
+            .setShowWhen(false)
             .setContentIntent(openAppIntent())
             .addAction(Notification.Action.Builder(null, "Отключить", stopIntent).build())
             .build()
@@ -259,9 +271,37 @@ class SruVpnService : VpnService() {
         }
     }
 
-    private fun updateNotification(name: String) {
+    private fun updateNotification(name: String, text: String = "Подключено") {
         getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID, notification(name, "Подключено"))
+            .notify(NOTIFICATION_ID, notification(name, text))
+    }
+
+    /**
+     * Скорость в уведомлении раз в секунду. Весь туннель — это сетевой трафик
+     * ядра к серверу, а ядро работает под UID приложения, поэтому хватает
+     * счётчиков TrafficStats этого UID (без доступа к статистике телефона).
+     */
+    private fun startSpeedMeter(name: String) {
+        val uid = AndroidProcess.myUid()
+        var lastRx = TrafficStats.getUidRxBytes(uid)
+        var lastTx = TrafficStats.getUidTxBytes(uid)
+        if (lastRx == TrafficStats.UNSUPPORTED.toLong() || lastTx == TrafficStats.UNSUPPORTED.toLong()) return
+        speedTask = ticker.scheduleWithFixedDelay({
+            val rx = TrafficStats.getUidRxBytes(uid)
+            val tx = TrafficStats.getUidTxBytes(uid)
+            val down = (rx - lastRx).coerceAtLeast(0)
+            val up = (tx - lastTx).coerceAtLeast(0)
+            lastRx = rx
+            lastTx = tx
+            if (!stopping) updateNotification(name, "↓ ${speed(down)}   ↑ ${speed(up)}")
+        }, 1, 1, TimeUnit.SECONDS)
+    }
+
+    /** Байт за секунду → «850 КБ/с», «1,2 МБ/с». */
+    private fun speed(bytesPerSec: Long): String = when {
+        bytesPerSec >= 1_000_000 -> String.format(Locale("ru"), "%.1f МБ/с", bytesPerSec / 1_000_000.0)
+        bytesPerSec >= 1_000 -> "${bytesPerSec / 1_000} КБ/с"
+        else -> "$bytesPerSec Б/с"
     }
 }
 

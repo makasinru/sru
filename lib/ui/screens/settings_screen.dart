@@ -86,7 +86,7 @@ class SettingsScreen extends StatelessWidget {
           child: SwitchListTile(
             value: state.advanced,
             onChanged: (v) => state.setMode(v ? UiMode.advanced : UiMode.simple),
-            title: const Text('Продвинутый режим'),
+            title: const Text('Режим Pro'),
             subtitle: const Text('Выбор протоколов, ручная установка, конфиги, доступ к панели 3x-ui'),
           ),
         ),
