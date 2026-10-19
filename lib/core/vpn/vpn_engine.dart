@@ -155,7 +155,7 @@ class MethodChannelVpnEngine extends _BaseEngine {
 /// на Windows включает системный прокси, чтобы браузеры и программы шли через VPN.
 /// Ядро завершается само, когда закрывается его stdin, то есть вместе с приложением.
 class DesktopXrayEngine extends _BaseEngine {
-  DesktopXrayEngine({this.corePath, WindowsSystemProxy? proxy})
+  DesktopXrayEngine({this.corePath, this.assetDir, WindowsSystemProxy? proxy})
     : _proxy = proxy ?? (Platform.isWindows ? WindowsSystemProxy() : null) {
     // Прошлый запуск завершился аварийно — вернуть пользователю интернет.
     try {
@@ -164,6 +164,9 @@ class DesktopXrayEngine extends _BaseEngine {
   }
 
   String? corePath;
+
+  /// Каталог geoip.dat/geosite.dat; по умолчанию geo рядом с приложением.
+  String? assetDir;
 
   /// Включать ли системный прокси Windows при подключении.
   bool useSystemProxy = true;
@@ -192,7 +195,7 @@ class DesktopXrayEngine extends _BaseEngine {
     emit(VpnStatus.connecting);
     final dir = await Directory.systemTemp.createTemp('sru');
     final cfg = File('${dir.path}${Platform.pathSeparator}config.json')..writeAsStringSync(xrayConfigJson);
-    final geo = '$_appDir${Platform.pathSeparator}geo';
+    final geo = assetDir ?? '$_appDir${Platform.pathSeparator}geo';
     try {
       final p = await Process.start(_resolveCore(), ['desktop', cfg.path, geo]);
       _process = p;

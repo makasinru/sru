@@ -15,6 +15,7 @@ import '../core/platform/windows_admin.dart';
 import '../core/server/remote_shell.dart';
 import '../core/server/xui_installer.dart';
 import '../core/vpn/connectivity_check.dart';
+import '../core/vpn/local_ports.dart';
 import '../core/vpn/vpn_engine.dart';
 import '../core/xray/split_tunnel.dart';
 import '../core/xray/xray_config_builder.dart';
@@ -331,7 +332,12 @@ class AppState extends ChangeNotifier {
 
   bool get _mobile => Platform.isAndroid || Platform.isIOS;
 
+  /// Порты локального прокси: выбираются при подключении (см. [LocalPorts]).
+  LocalPorts ports = LocalPorts.preferred;
+
   XrayOptions get xrayOptions => XrayOptions(
+    socksPort: ports.socks,
+    httpPort: ports.http,
     tun: _mobile || windowsTunActive,
     windowsTun: windowsTunActive,
     routing: routing,
@@ -407,6 +413,7 @@ class AppState extends ChangeNotifier {
     checks = [];
     busy = true;
     try {
+      ports = await LocalPorts.pick();
       await _connect(s);
     } finally {
       busy = false;

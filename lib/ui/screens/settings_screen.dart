@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/platform/windows_admin.dart';
 import '../../core/platform/windows_integration.dart';
+import '../../core/vpn/local_ports.dart';
 import '../../core/xray/xray_config_builder.dart';
 import '../../state/app_state.dart';
 import '../theme.dart';
@@ -133,9 +134,10 @@ class SettingsScreen extends StatelessWidget {
               value: state.systemProxy,
               onChanged: state.setSystemProxy,
               title: const Text('Системный прокси Windows'),
-              subtitle: const Text(
+              subtitle: Text(
                 'Браузеры и большинство программ пойдут через VPN. Если выключить — '
-                'укажите в программе вручную SOCKS 127.0.0.1:10808 или HTTP 127.0.0.1:10809',
+                'укажите в программе вручную SOCKS 127.0.0.1:${state.ports.socks} или HTTP 127.0.0.1:${state.ports.http}'
+                '${state.ports.socks != LocalPorts.preferred.socks ? ' (стандартные 10808/10809 заняты другой программой)' : ''}',
               ),
             ),
           ),
