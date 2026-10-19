@@ -59,9 +59,13 @@ class AppState extends ChangeNotifier {
   SplitMode appSplit = SplitMode.off;
   List<String> splitApps = [];
 
-  /// Результат последней проверки (Telegram, YouTube, Microsoft).
+  /// Результат последней проверки (Telegram, YouTube).
   List<CheckResult> checks = [];
   bool checking = false;
+
+  /// Скорость загрузки через VPN, Мбит/с (null — ещё не мерили или не вышло).
+  double? speedMbps;
+  bool speedTesting = false;
   String? autoStatus;
 
   /// Идёт подключение с перебором и проверкой протоколов.
@@ -395,6 +399,7 @@ class AppState extends ChangeNotifier {
       await engine.stop();
       activeProfile = null;
       checks = [];
+      speedMbps = null;
       probeResults = [];
       autoStatus = null;
       notifyListeners();
@@ -407,6 +412,7 @@ class AppState extends ChangeNotifier {
       _proxyPassword = const Uuid().v4();
     }
     checks = [];
+    speedMbps = null;
     probeResults = [];
     busy = true;
     try {
@@ -425,10 +431,7 @@ class AppState extends ChangeNotifier {
     if (!await _startProfile(s, p)) return (null, <CheckResult>[]);
     // AmneziaWG: ядро сообщает «подключено» только после рукопожатия.
     if (p.protocol == ProxyProtocol.amneziawg) return (sw.elapsedMilliseconds, <CheckResult>[]);
-    final quick = await _checker.checkAll(
-      sites: ConnectivityChecker.targets.take(2).toList(),
-      timeout: const Duration(seconds: 6),
-    );
+    final quick = await _checker.checkAll(timeout: const Duration(seconds: 6));
     return (ConnectivityChecker.bestMs(quick), quick);
   }
 
@@ -477,13 +480,20 @@ class AppState extends ChangeNotifier {
     autoStatus = null;
   }
 
-  /// Полная проверка для экрана: Telegram, YouTube, Microsoft.
+  /// Полная проверка для экрана: Telegram, YouTube и скорость загрузки.
   Future<void> runChecks() async {
-    if (status != VpnStatus.connected || checking || _activeIsAwg) return;
+    if (status != VpnStatus.connected || checking || speedTesting || _activeIsAwg) return;
     checking = true;
+    speedTesting = true;
+    speedMbps = null;
     notifyListeners();
-    checks = await _checker.checkAll();
+    final checker = _checker;
+    checks = await checker.checkAll();
     checking = false;
+    notifyListeners();
+    final mbps = await checker.speedTest();
+    speedTesting = false;
+    if (status == VpnStatus.connected) speedMbps = mbps;
     notifyListeners();
   }
 

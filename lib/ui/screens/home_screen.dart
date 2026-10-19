@@ -180,7 +180,7 @@ class _ProbeList extends StatelessWidget {
   }
 }
 
-/// Проверка «работает ли на самом деле»: Telegram, YouTube, Microsoft и задержка.
+/// Проверка «работает ли на самом деле»: Telegram, YouTube, задержка и скорость.
 class _ChecksRow extends StatelessWidget {
   const _ChecksRow({required this.state});
   final AppState state;
@@ -202,17 +202,32 @@ class _ChecksRow extends StatelessWidget {
           alignment: WrapAlignment.center,
           spacing: 8,
           runSpacing: 8,
-          children: [for (final t in ConnectivityChecker.targets) _chip(t.name, results[t.name])],
+          children: [for (final t in ConnectivityChecker.targets) _chip(t.name, results[t.name]), _speedChip()],
         ),
         const SizedBox(height: 8),
         TextButton.icon(
-          onPressed: state.checking ? null : state.runChecks,
-          icon: state.checking
+          onPressed: state.checking || state.speedTesting ? null : state.runChecks,
+          icon: state.checking || state.speedTesting
               ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.refresh, size: 18),
-          label: Text(state.checking ? 'Проверяем…' : 'Проверить подключение'),
+          label: Text(state.checking || state.speedTesting ? 'Проверяем…' : 'Проверить подключение'),
         ),
       ],
+    );
+  }
+
+  Widget _speedChip() {
+    final mbps = state.speedMbps;
+    final (icon, color, text) = state.speedTesting
+        ? (Icons.speed, SruColors.textTertiary, 'Скорость · замеряем…')
+        : mbps == null
+        ? (Icons.speed, SruColors.textTertiary, 'Скорость · —')
+        : (Icons.speed, SruColors.success, 'Скорость · ${mbps >= 10 ? mbps.round() : mbps.toStringAsFixed(1)} Мбит/с');
+    return Chip(
+      avatar: Icon(icon, size: 18, color: color),
+      label: Text(text),
+      backgroundColor: SruColors.bgSurface,
+      side: const BorderSide(color: SruColors.border),
     );
   }
 

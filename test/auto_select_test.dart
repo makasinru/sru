@@ -69,6 +69,9 @@ class FakeChecker extends ConnectivityChecker {
     final ms = msByPort[engine.started.last];
     return [for (final t in sites) CheckResult(t, ms)];
   }
+
+  @override
+  Future<double?> speedTest({Duration duration = const Duration(seconds: 6)}) async => null;
 }
 
 ServerEntry server() => ServerEntry(
