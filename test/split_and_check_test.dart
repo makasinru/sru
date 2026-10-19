@@ -56,6 +56,18 @@ void main() {
       expect(r.any((m) => m['network'] == 'tcp,udp'), isFalse);
     });
 
+    test('TUN на Windows: адрес, DNS в туннеле, маршруты, защита от утечки DNS', () {
+      final cfg = XrayConfigBuilder.build(p, const XrayOptions(tun: true, windowsTun: true));
+      final tun = (cfg['inbounds'] as List).cast<Map>().firstWhere((i) => i['protocol'] == 'tun');
+      final s = tun['settings'] as Map;
+      expect(s['gateway'], ['172.19.0.1/30']);
+      expect(s['dns'], ['172.19.0.2']);
+      expect(s['autoSystemRoutingTable'], ['0.0.0.0/0', '::/0']);
+      expect(s['autoSystemWfpBlockLeak'], ['dns']);
+      // DNS-запросы в туннель обрабатывает Xray.
+      expect(rules(const XrayOptions(tun: true, windowsTun: true)).first['outboundTag'], 'dns-out');
+    });
+
     test('пароль на локальных прокси', () {
       final cfg = XrayConfigBuilder.build(p, const XrayOptions(proxyUser: 'sru', proxyPassword: 'x'));
       final inb = (cfg['inbounds'] as List).cast<Map>();

@@ -3,10 +3,72 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/platform/windows_admin.dart';
+import '../../core/platform/windows_integration.dart';
 import '../../core/xray/xray_config_builder.dart';
 import '../../state/app_state.dart';
 import '../theme.dart';
 import 'split_tunnel_screen.dart';
+
+/// Режим TUN требует администратора: предлагаем перезапуск с запросом UAC.
+Future<void> _setTun(BuildContext context, AppState state, bool on) async {
+  state.setWindowsTun(on);
+  if (!on || WindowsAdmin.isAdmin) return;
+  final restart = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Нужны права администратора'),
+      content: const Text(
+        'Режиму TUN нужны права администратора, чтобы создать сетевой адаптер и маршруты. '
+        'Перезапустить приложение от администратора?',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Позже')),
+        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Перезапустить')),
+      ],
+    ),
+  );
+  if (restart != true) return;
+  await state.shutdown();
+  if (WindowsAdmin.relaunchElevated(['--elevated'])) exit(0);
+}
+
+class _WindowsStartup extends StatefulWidget {
+  const _WindowsStartup();
+
+  @override
+  State<_WindowsStartup> createState() => _WindowsStartupState();
+}
+
+class _WindowsStartupState extends State<_WindowsStartup> {
+  bool _autostart = WindowsIntegration.autostart;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    return Card(
+      child: Column(
+        children: [
+          SwitchListTile(
+            value: _autostart,
+            onChanged: (v) {
+              WindowsIntegration.autostart = v;
+              setState(() => _autostart = WindowsIntegration.autostart);
+            },
+            title: const Text('Запускать вместе с Windows'),
+            subtitle: const Text('Приложение стартует свёрнутым в трей'),
+          ),
+          if (_autostart)
+            SwitchListTile(
+              value: state.connectOnStart,
+              onChanged: state.setConnectOnStart,
+              title: const Text('Сразу подключаться'),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -49,6 +111,22 @@ class SettingsScreen extends StatelessWidget {
           ),
         ),
         if (Platform.isWindows) ...[
+          const SizedBox(height: 16),
+          const _WindowsStartup(),
+          const SizedBox(height: 16),
+          Card(
+            child: SwitchListTile(
+              value: state.windowsTun,
+              onChanged: (v) => _setTun(context, state, v),
+              title: const Text('Режим TUN — все программы'),
+              subtitle: Text(
+                state.windowsTun && !WindowsAdmin.isAdmin
+                    ? 'Включён, но нужны права администратора — перезапустите приложение от администратора'
+                    : 'Через VPN пойдут и программы, которые игнорируют прокси (игры, некоторые клиенты). '
+                          'Нужны права администратора',
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
           Card(
             child: SwitchListTile(

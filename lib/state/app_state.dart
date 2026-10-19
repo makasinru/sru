@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 import '../core/links/link_parser.dart';
 import '../core/links/subscription.dart';
 import '../core/models/proxy_profile.dart';
+import '../core/platform/windows_admin.dart';
 import '../core/server/remote_shell.dart';
 import '../core/server/xui_installer.dart';
 import '../core/vpn/connectivity_check.dart';
@@ -42,6 +43,13 @@ class AppState extends ChangeNotifier {
 
   /// Windows: включать системный прокси при подключении.
   bool systemProxy = true;
+
+  /// Windows: режим TUN — через VPN идут все программы, включая игры, которые
+  /// не смотрят на системный прокси. Нужны права администратора.
+  bool windowsTun = false;
+
+  /// Windows: подключаться при запуске (вместе с автозапуском).
+  bool connectOnStart = false;
 
   /// Раздельное туннелирование (продвинутый режим), как в Amnezia.
   SplitMode siteSplit = SplitMode.off;
@@ -82,6 +90,8 @@ class AppState extends ChangeNotifier {
     routing = RoutingPreset.values.byName(prefs.getString('routing') ?? RoutingPreset.bypassRu.name);
     blockAds = prefs.getBool('blockAds') ?? false;
     systemProxy = prefs.getBool('systemProxy') ?? true;
+    windowsTun = prefs.getBool('windowsTun') ?? false;
+    connectOnStart = prefs.getBool('connectOnStart') ?? false;
     siteSplit = SplitMode.values.byName(prefs.getString('siteSplit') ?? SplitMode.off.name);
     splitSites = prefs.getStringList('splitSites') ?? [];
     appSplit = SplitMode.values.byName(prefs.getString('appSplit') ?? SplitMode.off.name);
@@ -118,6 +128,8 @@ class AppState extends ChangeNotifier {
     await prefs.setString('routing', routing.name);
     await prefs.setBool('blockAds', blockAds);
     await prefs.setBool('systemProxy', systemProxy);
+    await prefs.setBool('windowsTun', windowsTun);
+    await prefs.setBool('connectOnStart', connectOnStart);
     await prefs.setString('siteSplit', siteSplit.name);
     await prefs.setStringList('splitSites', splitSites);
     await prefs.setString('appSplit', appSplit.name);
@@ -194,9 +206,24 @@ class AppState extends ChangeNotifier {
     _changed();
   }
 
+  void setWindowsTun(bool v) {
+    windowsTun = v;
+    _applyEngineSettings();
+    _changed();
+  }
+
+  void setConnectOnStart(bool v) {
+    connectOnStart = v;
+    _changed();
+  }
+
+  /// TUN на Windows включён и приложение запущено от администратора.
+  bool get windowsTunActive => Platform.isWindows && windowsTun && WindowsAdmin.isAdmin;
+
   void _applyEngineSettings() {
     final e = engine;
-    if (e is DesktopXrayEngine) e.useSystemProxy = systemProxy;
+    // В режиме TUN системный прокси не нужен: трафик и так идёт через туннель.
+    if (e is DesktopXrayEngine) e.useSystemProxy = systemProxy && !windowsTunActive;
   }
 
   /// Перед закрытием приложения: отключить VPN и вернуть настройки прокси.
@@ -304,7 +331,8 @@ class AppState extends ChangeNotifier {
   bool get _mobile => Platform.isAndroid || Platform.isIOS;
 
   XrayOptions get xrayOptions => XrayOptions(
-    tun: _mobile,
+    tun: _mobile || windowsTunActive,
+    windowsTun: windowsTunActive,
     routing: routing,
     blockAds: blockAds,
     // Раздельное туннелирование работает только в продвинутом режиме.

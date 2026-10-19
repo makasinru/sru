@@ -114,6 +114,11 @@ if(EXISTS "${SRU_CORE_DIR}/sru-core.exe")
     COMPONENT Runtime)
   install(DIRECTORY "${SRU_CORE_DIR}/geo" DESTINATION "${CMAKE_INSTALL_PREFIX}"
     COMPONENT Runtime)
+  # Драйвер wintun для режима TUN (core/build_desktop.sh windows).
+  if(EXISTS "${SRU_CORE_DIR}/wintun.dll")
+    install(FILES "${SRU_CORE_DIR}/wintun.dll" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+      COMPONENT Runtime)
+  endif()
 else()
   message(WARNING "sru-core не собран: запустите core/build_desktop.sh windows")
 endif()

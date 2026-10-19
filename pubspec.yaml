@@ -9,6 +9,7 @@ environment:
 dependencies:
   crypto: ^3.0.7
   dartssh2: ^4.1.0
+  ffi: ^2.2.0
   file_selector: ^1.1.0
   flutter:
     sdk: flutter
@@ -19,8 +20,10 @@ dependencies:
   provider: ^6.1.5+1
   qr_flutter: ^4.1.0
   shared_preferences: ^2.5.6
+  tray_manager: 0.5.3
   uuid: ^4.6.0
   win32_registry: ^3.0.3
+  window_manager: ^0.5.2
   zxing2: ^0.2.4
 
 dev_dependencies:
@@ -31,3 +34,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
+    - assets/tray.ico
+    - assets/tray.png

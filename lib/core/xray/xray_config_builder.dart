@@ -37,6 +37,7 @@ class XrayOptions {
     this.dns = const ['https://1.1.1.1/dns-query', '8.8.8.8'],
     this.blockAds = false,
     this.mtu = 1500,
+    this.windowsTun = false,
     this.siteSplit = SplitMode.off,
     this.splitSites = const [],
     this.proxyUser,
@@ -53,6 +54,10 @@ class XrayOptions {
   final List<String> dns;
   final bool blockAds;
   final int mtu;
+
+  /// TUN на Windows (wintun, права администратора): Xray сам назначает адрес,
+  /// маршруты и выводит свои соединения мимо туннеля. Требует [tun].
+  final bool windowsTun;
 
   /// Раздельное туннелирование по сайтам (продвинутый режим).
   final SplitMode siteSplit;
@@ -107,7 +112,7 @@ class XrayConfigBuilder {
             'tag': 'tun',
             'port': 0,
             'protocol': 'tun',
-            'settings': {'name': 'sru0', 'MTU': o.mtu},
+            'settings': o.windowsTun ? _windowsTun(o) : {'name': 'sru0', 'mtu': o.mtu},
             'sniffing': _sniffing,
           },
       ],
@@ -152,6 +157,18 @@ class XrayConfigBuilder {
       },
     };
   }
+
+  /// Адрес TUN на Windows и DNS внутри него (запросы на 172.19.0.2:53 уходят в
+  /// туннель и обрабатываются правилом port 53 → dns-out).
+  static Map<String, dynamic> _windowsTun(XrayOptions o) => {
+    'name': 'SruNaZapret',
+    'mtu': o.mtu,
+    'gateway': ['172.19.0.1/30'],
+    'dns': ['172.19.0.2'],
+    'autoSystemRoutingTable': ['0.0.0.0/0', '::/0'],
+    // Windows шлёт DNS-запросы во все интерфейсы сразу — закрываем эту утечку.
+    'autoSystemWfpBlockLeak': ['dns'],
+  };
 
   static bool _onlyListed(XrayOptions o) =>
       o.siteSplit == SplitMode.onlyListed && !SiteRules.parse(o.splitSites).isEmpty;

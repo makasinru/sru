@@ -28,6 +28,8 @@ bool FlutterWindow::OnCreate() {
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
+    // При автозапуске с Windows окно не показываем: приложение сразу в трее.
+    if (wcsstr(::GetCommandLineW(), L"--autostart") != nullptr) return;
     this->Show();
   });
 

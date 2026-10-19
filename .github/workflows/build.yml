@@ -105,6 +105,7 @@ jobs:
             Copy-Item "$env:WINDIR\System32\$dll" $rel
           }
           if (!(Test-Path "$rel\sru-core.exe")) { throw "sru-core.exe не попал в сборку" }
+          if (!(Test-Path "$rel\wintun.dll")) { throw "wintun.dll не попал в сборку (режим TUN)" }
 
       - name: Zip and installer
         shell: pwsh

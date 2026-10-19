@@ -17,10 +17,14 @@ Uint8List qrPng(String text) {
   for (var y = 0; y < m.height; y++) {
     for (var x = 0; x < m.width; x++) {
       if (m.get(x, y) == 1) {
-        img.fillRect(image,
-            x1: (x + quiet) * scale, y1: (y + quiet) * scale,
-            x2: (x + quiet + 1) * scale - 1, y2: (y + quiet + 1) * scale - 1,
-            color: img.ColorRgb8(0, 0, 0));
+        img.fillRect(
+          image,
+          x1: (x + quiet) * scale,
+          y1: (y + quiet) * scale,
+          x2: (x + quiet + 1) * scale - 1,
+          y2: (y + quiet + 1) * scale - 1,
+          color: img.ColorRgb8(0, 0, 0),
+        );
       }
     }
   }
@@ -37,8 +41,10 @@ void main() {
     });
 
     test('sru://add?url=подписка', () {
-      expect(DeepLink.payload('sru://add?url=${Uri.encodeComponent('https://sub.example/abc?x=1')}'),
-          'https://sub.example/abc?x=1');
+      expect(
+        DeepLink.payload('sru://add?url=${Uri.encodeComponent('https://sub.example/abc?x=1')}'),
+        'https://sub.example/abc?x=1',
+      );
     });
 
     test('sru://import — несколько ключей', () {

@@ -5,10 +5,12 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'core/platform/single_instance.dart';
 import 'core/platform/windows_integration.dart';
 import 'core/vpn/windows_proxy.dart';
 import 'state/app_state.dart';
 import 'state/link_handler.dart';
+import 'ui/desktop_shell.dart';
 import 'ui/screens/root_screen.dart';
 import 'ui/theme.dart';
 
@@ -20,6 +22,18 @@ Future<void> main(List<String> args) async {
     exit(0);
   }
   WidgetsFlutterBinding.ensureInitialized();
+  final desktop = Platform.isWindows || Platform.isLinux;
+
+  // Второй запуск передаёт аргументы (например, ссылку sru://) первому.
+  SingleInstance? instance;
+  if (desktop) {
+    instance = await SingleInstance.claim(
+      args,
+      wait: args.contains('--elevated') ? const Duration(seconds: 5) : Duration.zero,
+    );
+    if (instance == null) exit(0);
+  }
+
   final state = AppState();
   await state.load();
   if (Platform.isWindows) {
@@ -27,15 +41,43 @@ Future<void> main(List<String> args) async {
       WindowsIntegration.registerUrlProtocol();
     } catch (_) {}
   }
-  runApp(ChangeNotifierProvider.value(value: state, child: const SruApp()));
-  unawaited(LinkHandler(state, messengerKey).init(args));
+  final links = LinkHandler(state, messengerKey);
+  DesktopShell? shell;
+  if (desktop) {
+    try {
+      shell = await DesktopShell.init(state);
+    } catch (_) {
+      // нет трея (например, Linux без appindicator) — обычное окно
+    }
+    instance!.messages.listen((other) async {
+      await shell?.show();
+      for (final a in other) {
+        await links.handle(a);
+      }
+    });
+  }
+  runApp(
+    ChangeNotifierProvider.value(
+      value: state,
+      child: SruApp(shell: shell),
+    ),
+  );
+  unawaited(links.init(args));
+
+  // Автозапуск с Windows: окно скрыто, при желании сразу подключаемся.
+  if (args.contains('--autostart') && state.connectOnStart && state.selectedServer != null) {
+    unawaited(state.toggle());
+  }
 }
 
 /// Для сообщений вне экранов (диплинки).
 final messengerKey = GlobalKey<ScaffoldMessengerState>();
 
 class SruApp extends StatefulWidget {
-  const SruApp({super.key});
+  const SruApp({super.key, this.shell});
+
+  /// Трей и окно на десктопе (null на Android).
+  final DesktopShell? shell;
 
   @override
   State<SruApp> createState() => _SruAppState();
