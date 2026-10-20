@@ -21,6 +21,9 @@ class _RootScreenState extends State<RootScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    // Пока читаются настройки — не мастер «Добавьте сервер»: после выгрузки
+    // приложения из памяти он мелькал, будто серверы пропали.
+    if (!state.loaded) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     if (state.servers.isEmpty) return const AddServerScreen(isOnboarding: true);
 
     final pages = [const HomeScreen(), if (state.advanced) const ServersScreen(), const SettingsScreen()];

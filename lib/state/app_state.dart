@@ -91,7 +91,23 @@ class AppState extends ChangeNotifier {
 
   // ---------- хранение ----------
 
+  /// Настройки прочитаны. До этого экран показывает загрузку, а не мастер
+  /// «Добавьте сервер», и ничего не сохраняется — иначе пустой список
+  /// затёр бы сохранённые серверы.
+  bool loaded = false;
+
   Future<void> load() async {
+    try {
+      await _load();
+    } finally {
+      if (!loaded) {
+        loaded = true;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     mode = UiMode.values.byName(prefs.getString('mode') ?? UiMode.simple.name);
     routing = RoutingPreset.values.byName(prefs.getString('routing') ?? RoutingPreset.bypassRu.name);
@@ -107,10 +123,20 @@ class AppState extends ChangeNotifier {
     selectedServerId = prefs.getString('selectedServer');
     final raw = prefs.getString('servers');
     if (raw != null) {
-      servers = (jsonDecode(raw) as List)
-          .map((e) => ServerEntry.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
+      final list = <ServerEntry>[];
+      for (final e in jsonDecode(raw) as List) {
+        try {
+          list.add(ServerEntry.fromJson(Map<String, dynamic>.from(e as Map)));
+        } catch (_) {
+          // Битая запись не должна стирать остальные серверы.
+        }
+      }
+      servers = list;
     }
+    // Серверы уже можно показывать; секреты (SSH, панель) дочитываем следом —
+    // хранилище ключей Android бывает медленным.
+    loaded = true;
+    notifyListeners();
     for (final s in servers) {
       final secret = await _readSecret(s.id);
       if (secret == null) continue;
@@ -130,6 +156,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _save() async {
+    if (!loaded) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('mode', mode.name);
     await prefs.setString('routing', routing.name);
