@@ -90,7 +90,12 @@ class FakeChecker extends ConnectivityChecker {
   }
 
   @override
-  Future<double?> speedTest({Duration duration = const Duration(seconds: 4)}) async => null;
+  Future<double?> speedTest({
+    int maxBytes = ConnectivityChecker.speedBytes,
+    int streams = 4,
+    Duration duration = const Duration(seconds: 5),
+    Duration warmup = const Duration(milliseconds: 400),
+  }) async => null;
 }
 
 ServerEntry server() => ServerEntry(

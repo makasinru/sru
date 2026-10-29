@@ -103,6 +103,8 @@ class MainActivity : FlutterActivity() {
                 result.success(null)
             }
             "status" -> result.success(VpnStatusBus.current)
+            // Каталог для settings.json (lib/state/settings_file.dart).
+            "filesDir" -> result.success(filesDir.path)
             "installedApps" -> Thread {
                 val apps = installedApps()
                 runOnUiThread { result.success(apps) }

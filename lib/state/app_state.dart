@@ -21,15 +21,18 @@ import '../core/vpn/vpn_engine.dart';
 import '../core/xray/split_tunnel.dart';
 import '../core/xray/xray_config_builder.dart';
 import 'server_entry.dart';
+import 'settings_file.dart';
 
 /// Простой режим — как Amnezia: одна кнопка, «Автоматически», минимум настроек.
 /// Продвинутый — как Happ: выбор протокола, маршрутизация, конфиги, панель.
 enum UiMode { simple, advanced }
 
 class AppState extends ChangeNotifier {
-  AppState({VpnEngine? engine, FlutterSecureStorage? secure})
+  AppState({VpnEngine? engine, FlutterSecureStorage? secure, Future<SettingsFile?>? settingsFile})
     : engine = engine ?? VpnEngine.platformDefault(),
-      _secure = secure ?? const FlutterSecureStorage() {
+      _secure = secure ?? const FlutterSecureStorage(),
+      // В тестах (свой engine) файла нет, если его не передали явно.
+      _file = settingsFile ?? (engine == null ? SettingsFile.forPlatform() : Future.value()) {
     _sub = this.engine.status.listen((s) {
       status = s;
       notifyListeners();
@@ -38,6 +41,16 @@ class AppState extends ChangeNotifier {
 
   final VpnEngine engine;
   final FlutterSecureStorage _secure;
+  final Future<SettingsFile?> _file;
+
+  /// Не удалось прочитать или сохранить настройки — показываем на экране.
+  String? storageError;
+
+  void dismissStorageError() {
+    storageError = null;
+    notifyListeners();
+  }
+
   StreamSubscription<VpnStatus>? _sub;
 
   UiMode mode = UiMode.simple;
@@ -108,20 +121,46 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    mode = UiMode.values.byName(prefs.getString('mode') ?? UiMode.simple.name);
-    routing = RoutingPreset.values.byName(prefs.getString('routing') ?? RoutingPreset.bypassRu.name);
-    blockAds = prefs.getBool('blockAds') ?? false;
-    systemProxy = prefs.getBool('systemProxy') ?? true;
-    windowsTun = prefs.getBool('windowsTun') ?? false;
-    connectOnStart = prefs.getBool('connectOnStart') ?? false;
-    siteSplit = SplitMode.values.byName(prefs.getString('siteSplit') ?? SplitMode.off.name);
-    splitSites = prefs.getStringList('splitSites') ?? [];
-    appSplit = SplitMode.values.byName(prefs.getString('appSplit') ?? SplitMode.off.name);
-    splitApps = prefs.getStringList('splitApps') ?? [];
+    // Свой файл (Android) — главный источник; SharedPreferences — запасной
+    // и для перехода со старых версий.
+    Map<String, dynamic>? data;
+    final file = await _file;
+    if (file != null) {
+      try {
+        data = await file.read();
+      } catch (e) {
+        storageError = 'Не удалось прочитать настройки: $e';
+      }
+    }
+    if (data == null) {
+      try {
+        final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 5));
+        data = {for (final k in prefs.getKeys()) k: prefs.get(k)};
+      } catch (e) {
+        storageError ??= 'Хранилище настроек недоступно: $e';
+        data = {};
+      }
+    }
+    T? get<T>(String k) => data![k] is T ? data[k] as T : null;
+    List<String>? list(String k) => (data![k] as List?)?.cast<String>();
+    T byName<T extends Enum>(List<T> values, String k, T def) {
+      final v = get<String>(k);
+      return values.where((e) => e.name == v).firstOrNull ?? def;
+    }
+
+    mode = byName(UiMode.values, 'mode', UiMode.simple);
+    routing = byName(RoutingPreset.values, 'routing', RoutingPreset.bypassRu);
+    blockAds = get<bool>('blockAds') ?? false;
+    systemProxy = get<bool>('systemProxy') ?? true;
+    windowsTun = get<bool>('windowsTun') ?? false;
+    connectOnStart = get<bool>('connectOnStart') ?? false;
+    siteSplit = byName(SplitMode.values, 'siteSplit', SplitMode.off);
+    splitSites = list('splitSites') ?? [];
+    appSplit = byName(SplitMode.values, 'appSplit', SplitMode.off);
+    splitApps = list('splitApps') ?? [];
     _applyEngineSettings();
-    selectedServerId = prefs.getString('selectedServer');
-    final raw = prefs.getString('servers');
+    selectedServerId = get<String>('selectedServer');
+    final raw = get<String>('servers');
     if (raw != null) {
       final list = <ServerEntry>[];
       for (final e in jsonDecode(raw) as List) {
@@ -155,21 +194,51 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Map<String, dynamic> _settingsMap() => {
+    'mode': mode.name,
+    'routing': routing.name,
+    'blockAds': blockAds,
+    'systemProxy': systemProxy,
+    'windowsTun': windowsTun,
+    'connectOnStart': connectOnStart,
+    'siteSplit': siteSplit.name,
+    'splitSites': splitSites,
+    'appSplit': appSplit.name,
+    'splitApps': splitApps,
+    'selectedServer': ?selectedServerId,
+    'servers': jsonEncode(servers.map((s) => s.toJson()).toList()),
+  };
+
   Future<void> _save() async {
     if (!loaded) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('mode', mode.name);
-    await prefs.setString('routing', routing.name);
-    await prefs.setBool('blockAds', blockAds);
-    await prefs.setBool('systemProxy', systemProxy);
-    await prefs.setBool('windowsTun', windowsTun);
-    await prefs.setBool('connectOnStart', connectOnStart);
-    await prefs.setString('siteSplit', siteSplit.name);
-    await prefs.setStringList('splitSites', splitSites);
-    await prefs.setString('appSplit', appSplit.name);
-    await prefs.setStringList('splitApps', splitApps);
-    if (selectedServerId != null) await prefs.setString('selectedServer', selectedServerId!);
-    await prefs.setString('servers', jsonEncode(servers.map((s) => s.toJson()).toList()));
+    final data = _settingsMap();
+    final file = await _file;
+    var ok = false;
+    if (file != null) {
+      try {
+        await file.write(data);
+        ok = true;
+      } catch (e) {
+        storageError = 'Не удалось сохранить настройки: $e';
+      }
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 5));
+      for (final MapEntry(:key, :value) in data.entries) {
+        switch (value) {
+          case final String v:
+            await prefs.setString(key, v);
+          case final bool v:
+            await prefs.setBool(key, v);
+          case final List<String> v:
+            await prefs.setStringList(key, v);
+        }
+      }
+      ok = true;
+    } catch (e) {
+      if (!ok) storageError = 'Не удалось сохранить настройки: $e';
+    }
+    if (ok && storageError != null && storageError!.startsWith('Не удалось сохранить')) storageError = null;
   }
 
   Future<void> _saveSecret(ServerEntry s) async {
@@ -408,7 +477,10 @@ class AppState extends ChangeNotifier {
     servers.add(e);
     selectedServerId = e.id;
     await _saveSecret(e);
-    _changed();
+    // Новый сервер сохраняем сразу и дожидаемся записи: приложение могут
+    // выгрузить из памяти в любой момент.
+    notifyListeners();
+    await _save();
     return e;
   }
 
@@ -643,13 +715,14 @@ class AppState extends ChangeNotifier {
     if (autoSpeedTest) await measureSpeed();
   }
 
-  /// Скорость загрузки через VPN (до 10 МБ, до 4 секунд).
+  /// Скорость загрузки через VPN (телефон — до 10 МБ, ПК — до 25 МБ, до 5 секунд).
   Future<void> measureSpeed() async {
     if (status != VpnStatus.connected || speedTesting || _activeIsAwg) return;
     speedTesting = true;
     speedMbps = null;
     notifyListeners();
-    final mbps = await _checker.speedTest();
+    // На ПК трафик обычно не лимитный — можно скачать больше и измерить точнее.
+    final mbps = await _checker.speedTest(maxBytes: _mobile ? 10 * 1000 * 1000 : 25 * 1000 * 1000);
     speedTesting = false;
     if (status == VpnStatus.connected) speedMbps = mbps;
     notifyListeners();

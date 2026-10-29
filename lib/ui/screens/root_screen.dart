@@ -26,10 +26,24 @@ class _RootScreenState extends State<RootScreen> {
     if (!state.loaded) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     if (state.servers.isEmpty) return const AddServerScreen(isOnboarding: true);
 
+    final error = state.storageError;
     final pages = [const HomeScreen(), if (state.advanced) const ServersScreen(), const SettingsScreen()];
     final tab = _tab.clamp(0, pages.length - 1);
     return Scaffold(
-      body: SafeArea(child: pages[tab]),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Если настройки не сохраняются, серверы пропадут после перезапуска —
+            // лучше сказать об этом сразу.
+            if (error != null)
+              MaterialBanner(
+                content: Text(error, style: const TextStyle(fontSize: 13)),
+                actions: [TextButton(onPressed: state.dismissStorageError, child: const Text('Понятно'))],
+              ),
+            Expanded(child: pages[tab]),
+          ],
+        ),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: tab,
         onDestinationSelected: (i) => setState(() => _tab = i),

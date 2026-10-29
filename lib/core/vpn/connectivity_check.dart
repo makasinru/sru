@@ -35,11 +35,11 @@ class ConnectivityChecker {
     CheckTarget('YouTube', 'https://www.youtube.com/generate_204'),
   ];
 
-  /// Сколько максимум скачивает один замер скорости: 10 МБ.
+  /// Сколько максимум скачивает один замер скорости по умолчанию: 10 МБ.
   static const speedBytes = 10 * 1000 * 1000;
 
-  /// Файл для замера скорости (Cloudflare отдаёт столько байт, сколько попросили).
-  static const defaultSpeedUrl = 'https://speed.cloudflare.com/__down?bytes=$speedBytes';
+  /// Cloudflare отдаёт столько байт, сколько попросили в ?bytes=.
+  static const defaultSpeedUrl = 'https://speed.cloudflare.com/__down';
 
   Future<List<CheckResult>> checkAll({
     List<CheckTarget> sites = targets,
@@ -55,28 +55,58 @@ class ConnectivityChecker {
   }
 
   /// Скорость загрузки через туннель, Мбит/с; null — не удалось скачать.
-  /// Качает не больше [speedBytes] и не дольше [duration], чтобы не тратить трафик.
-  Future<double?> speedTest({Duration duration = const Duration(seconds: 4)}) async {
-    final client = _client(const Duration(seconds: 8));
-    var bytes = 0;
+  ///
+  /// Как speedtest: несколько потоков сразу, а первые доли секунды (разгон TCP
+  /// и задержка до первого байта) не считаются. Одним потоком на 10 МБ быстрый
+  /// канал не успевал разогнаться, и замер упирался примерно в 100 Мбит/с.
+  /// Всего скачивается не больше [maxBytes] и не дольше [duration].
+  Future<double?> speedTest({
+    int maxBytes = speedBytes,
+    int streams = 4,
+    Duration duration = const Duration(seconds: 5),
+    Duration warmup = const Duration(milliseconds: 400),
+  }) async {
+    final client = _client(const Duration(seconds: 8))..maxConnectionsPerHost = streams;
     final sw = Stopwatch();
-    try {
-      final req = await client.getUrl(Uri.parse(speedUrl)).timeout(const Duration(seconds: 8));
-      final resp = await req.close().timeout(const Duration(seconds: 8));
-      if (resp.statusCode != HttpStatus.ok) return null;
-      sw.start();
-      await for (final chunk in resp.timeout(const Duration(seconds: 5))) {
-        bytes += chunk.length;
-        if (sw.elapsed >= duration) break;
+    var bytes = 0;
+    int? warmBytes;
+    Duration? warmAt;
+    var done = false;
+
+    Future<void> stream() async {
+      try {
+        final uri = Uri.parse('$speedUrl${speedUrl.contains('?') ? '&' : '?'}bytes=${maxBytes ~/ streams}');
+        final req = await client.getUrl(uri).timeout(const Duration(seconds: 8));
+        final resp = await req.close().timeout(const Duration(seconds: 8));
+        if (resp.statusCode != HttpStatus.ok) return;
+        await for (final chunk in resp.timeout(const Duration(seconds: 5))) {
+          if (!sw.isRunning) sw.start();
+          bytes += chunk.length;
+          if (warmBytes == null && sw.elapsed >= warmup) {
+            warmBytes = bytes;
+            warmAt = sw.elapsed;
+          }
+          if (done || sw.elapsed >= duration) break;
+        }
+      } catch (_) {
+        // Обрыв или таймаут посередине — считаем по тому, что успело скачаться.
       }
-    } catch (_) {
-      // Обрыв или таймаут посередине — считаем по тому, что успело скачаться.
+    }
+
+    try {
+      await Future.wait([for (var i = 0; i < streams; i++) stream()]);
     } finally {
+      done = true;
+      sw.stop();
       client.close(force: true);
     }
-    final secs = sw.elapsedMicroseconds / 1e6;
-    if (bytes < 100000 || secs <= 0) return null;
-    return bytes * 8 / secs / 1e6;
+    if (bytes < 100000 || sw.elapsedMicroseconds <= 0) return null;
+    // Если после разгона прошло хотя бы 0,3 с — считаем только этот отрезок.
+    final from = warmAt;
+    if (from != null && sw.elapsed - from >= const Duration(milliseconds: 300)) {
+      return (bytes - warmBytes!) * 8 / ((sw.elapsed - from).inMicroseconds / 1e6) / 1e6;
+    }
+    return bytes * 8 / (sw.elapsedMicroseconds / 1e6) / 1e6;
   }
 
   Future<CheckResult> check(CheckTarget t, {Duration timeout = const Duration(seconds: 8)}) async {
