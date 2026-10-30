@@ -15,6 +15,9 @@ concurrency:
 env:
   FLUTTER_VERSION: "3.47.7"
 
+permissions:
+  contents: write
+
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -76,10 +79,23 @@ jobs:
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk dist/SruNaZapret-android.apk
 
+      # Сборки веток — артефактом на 3 дня: бесплатные 500 МБ приватного
+      # репозитория кончаются за несколько сборок при 90-дневном хранении.
       - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        # Кончилось место под артефакты — сборка всё равно считается удачной.
+        continue-on-error: true
         with:
           name: SruNaZapret-android
           path: dist/*
+          retention-days: 3
+
+      # Тег — файлы сразу в релиз (место под релизы в квоту артефактов не входит).
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: dist/*
+          prerelease: true
 
   windows:
     runs-on: windows-latest
@@ -132,23 +148,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "ISCC завершился с кодом $LASTEXITCODE" }
           Copy-Item build\installer\SruNaZapret-Setup-*.exe dist\
 
+      # Сборки веток — артефактом на 3 дня: бесплатные 500 МБ приватного
+      # репозитория кончаются за несколько сборок при 90-дневном хранении.
       - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        # Кончилось место под артефакты — сборка всё равно считается удачной.
+        continue-on-error: true
         with:
           name: SruNaZapret-windows
           path: dist/*
+          retention-days: 3
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [android, windows]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
+      # Тег — файлы сразу в релиз (место под релизы в квоту артефактов не входит).
       - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           files: dist/*
           prerelease: true
