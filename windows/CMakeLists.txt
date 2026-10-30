@@ -119,6 +119,10 @@ if(EXISTS "${SRU_CORE_DIR}/sru-core.exe")
     install(FILES "${SRU_CORE_DIR}/wintun.dll" DESTINATION "${CMAKE_INSTALL_PREFIX}"
       COMPONENT Runtime)
   endif()
+  if(EXISTS "${SRU_CORE_DIR}/wintun-LICENSE.txt")
+    install(FILES "${SRU_CORE_DIR}/wintun-LICENSE.txt" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+      COMPONENT Runtime)
+  endif()
 else()
   message(WARNING "sru-core не собран: запустите core/build_desktop.sh windows")
 endif()

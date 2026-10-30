@@ -46,3 +46,7 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Ключи подписи Android — только в секретах GitHub
+*.jks
+*.keystore

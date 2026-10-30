@@ -36,3 +36,4 @@ flutter:
     - assets/logo.png
     - assets/tray.ico
     - assets/tray.png
+    - assets/licenses/THIRD_PARTY_NOTICES.txt

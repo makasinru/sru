@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'core/platform/single_instance.dart';
@@ -22,6 +24,12 @@ Future<void> main(List<String> args) async {
     exit(0);
   }
   WidgetsFlutterBinding.ensureInitialized();
+  // Лицензии ядра (Xray-core, amneziawg-go, gVisor…), wintun и geo-данных —
+  // в экран «Лицензии» вместе с лицензиями Flutter-пакетов.
+  LicenseRegistry.addLicense(() async* {
+    final text = await rootBundle.loadString('assets/licenses/THIRD_PARTY_NOTICES.txt');
+    yield LicenseEntryWithLineBreaks(['sru-core (Xray-core, amneziawg-go и др.)'], text);
+  });
   final desktop = Platform.isWindows || Platform.isLinux;
 
   // Второй запуск передаёт аргументы (например, ссылку sru://) первому.

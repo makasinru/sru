@@ -30,10 +30,12 @@ if [[ "$os" == "windows" && ! -s "$out/wintun.dll" ]]; then
   if curl -fsSL "https://www.wintun.net/builds/wintun-0.14.1.zip" -o "$wintun_zip" \
       && echo "$wintun_sha  $wintun_zip" | sha256sum -c --quiet; then
     if command -v unzip >/dev/null; then
-      unzip -o -j -q "$wintun_zip" wintun/bin/amd64/wintun.dll -d "$out"
+      unzip -o -j -q "$wintun_zip" wintun/bin/amd64/wintun.dll wintun/LICENSE.txt -d "$out"
     else
-      7z e -y -o"$out" "$wintun_zip" wintun/bin/amd64/wintun.dll >/dev/null
+      7z e -y -o"$out" "$wintun_zip" wintun/bin/amd64/wintun.dll wintun/LICENSE.txt >/dev/null
     fi
+    # Лицензия wintun требует распространять DLL вместе с её условиями.
+    mv -f "$out/LICENSE.txt" "$out/wintun-LICENSE.txt" 2>/dev/null || true
   else
     echo "sru-core: не удалось скачать wintun.dll — режим TUN на Windows работать не будет" >&2
   fi

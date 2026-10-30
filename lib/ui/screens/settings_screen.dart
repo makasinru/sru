@@ -174,6 +174,20 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
         ],
+        const SizedBox(height: 16),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.description_outlined),
+            title: const Text('Лицензии'),
+            subtitle: const Text('Исходный код — GPL-3.0; Xray-core, AmneziaWG и другие компоненты'),
+            onTap: () => showLicensePage(
+              context: context,
+              applicationName: 'SruNaZapret',
+              applicationVersion: '0.1.0',
+              applicationLegalese: '© 2026 SruNaZapret. GPL-3.0-or-later.',
+            ),
+          ),
+        ),
         const SizedBox(height: 24),
         const Center(
           child: Text('SruNaZapret 0.1.0', style: TextStyle(color: SruColors.textTertiary)),
