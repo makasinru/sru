@@ -67,7 +67,7 @@ Future<void> main(List<String> args) async {
       WindowsIntegration.registerUrlProtocol();
     } catch (_) {}
   }
-  final links = LinkHandler(state, messengerKey);
+  final links = LinkHandler(state, messengerKey, navigatorKey);
   DesktopShell? shell;
   if (desktop) {
     try {
@@ -101,6 +101,9 @@ Future<void> main(List<String> args) async {
 
 /// Для сообщений вне экранов (диплинки).
 final messengerKey = GlobalKey<ScaffoldMessengerState>();
+
+/// Для диалогов вне экранов (подтверждение сервера из диплинка).
+final navigatorKey = GlobalKey<NavigatorState>();
 
 class SruApp extends StatefulWidget {
   const SruApp({super.key, this.shell});
@@ -138,6 +141,7 @@ class _SruAppState extends State<SruApp> {
     return MaterialApp(
       title: 'SruNaZapret',
       scaffoldMessengerKey: messengerKey,
+      navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       home: const RootScreen(),
