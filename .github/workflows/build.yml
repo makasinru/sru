@@ -16,7 +16,8 @@ on:
 
 # Новый push в ту же ветку отменяет недоделанную сборку предыдущего.
 concurrency:
-  group: build-${{ github.ref }}
+  # Ручной релиз — своя группа: push в ту же ветку не должен его отменить.
+  group: build-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 env:

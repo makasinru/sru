@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
 import 'package:provider/provider.dart';
 
+import '../../app_version.dart';
 import '../../core/platform/windows_admin.dart';
 import '../../core/platform/windows_integration.dart';
 import '../../core/vpn/local_ports.dart';
@@ -183,14 +185,14 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => showLicensePage(
               context: context,
               applicationName: 'SruNaZapret',
-              applicationVersion: '0.1.0',
+              applicationVersion: appVersion,
               applicationLegalese: '© 2026 SruNaZapret. GPL-3.0-or-later.',
             ),
           ),
         ),
         const SizedBox(height: 24),
         const Center(
-          child: Text('SruNaZapret 0.1.0', style: TextStyle(color: SruColors.textTertiary)),
+          child: Text('SruNaZapret $appVersion', style: TextStyle(color: SruColors.textTertiary)),
         ),
       ],
     );
